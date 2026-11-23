@@ -1,0 +1,58 @@
+{
+  "name": "webscape-obfuscator",
+  "productName": "Webscape Obfuscator",
+  "version": "0.1.0",
+  "description": "A private-by-default Chromium browser: every tab has its own memory, nothing touches disk, vertical tabs, built-in password vault.",
+  "main": "dist/main/main.js",
+  "license": "Apache-2.0",
+  "scripts": {
+    "build": "tsc -p tsconfig.json && tsc -p tsconfig.ui.json && node scripts/copy-static.mjs",
+    "start": "npm run build && electron .",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.ui.json --noEmit",
+    "dist": "npm run build && electron-builder"
+  },
+  "build": {
+    "appId": "org.webscape.obfuscator",
+    "productName": "Webscape Obfuscator",
+    "files": [
+      "dist/**",
+      "package.json"
+    ],
+    "mac": {
+      "category": "public.app-category.productivity",
+      "target": [
+        "dmg"
+      ]
+    },
+    "linux": {
+      "target": [
+        "AppImage"
+      ]
+    },
+    "win": {
+      "target": [
+        "nsis"
+      ]
+    },
+    "directories": {
+      "output": "release"
+    }
+  },
+  "dependencies": {
+    "@ghostery/adblocker-electron": "^2.20.3"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "electron": "^45.4.1",
+    "electron-builder": "^26.18.0",
+    "typescript": "^7.0.2"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ancientcomputing/webscape.git"
+  },
+  "homepage": "https://github.com/ancientcomputing/webscape",
+  "bugs": {
+    "url": "https://github.com/ancientcomputing/webscape/issues"
+  }
+}
