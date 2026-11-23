@@ -34,7 +34,7 @@ function icon(d: string): SVGSVGElement {
   return svg;
 }
 
-let state: AppState = { tabs: [], activeId: null, vaultUnlocked: false, vaultAvailable: true, loginForm: null, savePrompt: null };
+let state: AppState = { tabs: [], activeId: null, vaultUnlocked: false, vaultAvailable: true, legacy: false, loginForm: null, savePrompt: null };
 let vaultOpen = false;
 let fillChoices: { origin: string; entries: VaultEntrySummary[] } | null = null;
 
@@ -108,12 +108,17 @@ function renderTabs(): void {
 // ---------------------------------------------------------------------------
 // Address bar and navigation
 // ---------------------------------------------------------------------------
+// Two address fields: the modern sidebar one and the legacy "Location:" one.
 const address = $<HTMLInputElement>('address');
+const legacyAddress = $<HTMLInputElement>('l-address');
+const addressFields = [address, legacyAddress];
 let editingAddress = false;
+const visibleAddress = () => (state.legacy ? legacyAddress : address);
 
 function renderChrome(): void {
   const tab = activeTab();
-  if (!editingAddress) address.value = tab?.url ?? '';
+  document.body.classList.toggle('legacy', state.legacy);
+  if (!editingAddress) for (const f of addressFields) f.value = tab?.url ?? '';
   ($('back') as HTMLButtonElement).disabled = !tab?.canGoBack;
   ($('forward') as HTMLButtonElement).disabled = !tab?.canGoForward;
   $('reload').classList.toggle('loading', !!tab?.loading);
@@ -121,35 +126,55 @@ function renderChrome(): void {
   lock.className = `lock ${!tab?.url ? 'none' : tab.secure ? 'secure' : 'insecure'}`;
   lock.title = !tab?.url ? '' : tab.secure ? 'Secure connection' : 'Not secure';
   const n = tab?.blocked ?? 0;
-  $('shield-text').textContent = `${n} tracker${n === 1 ? '' : 's'} blocked`;
+  const blockedText = `${n} tracker${n === 1 ? '' : 's'} blocked`;
+  $('shield-text').textContent = blockedText;
   $('shield').classList.toggle('active', n > 0);
   const vs = $('vault-state');
   vs.textContent = state.vaultUnlocked ? 'Unlocked' : 'Locked';
   vs.classList.toggle('on', state.vaultUnlocked);
+  renderLegacyChrome(tab, blockedText);
 }
 
-address.addEventListener('focus', () => {
-  editingAddress = true;
-  address.select();
-});
-address.addEventListener('blur', () => {
-  editingAddress = false;
-  renderChrome();
-});
-address.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape') {
-    address.value = activeTab()?.url ?? '';
-    void api.invoke('ui:focusPage');
-  }
-});
-$('address-form').addEventListener('submit', (e) => {
-  e.preventDefault();
-  const value = address.value.trim();
-  if (!value) return;
-  closeVault();
-  void api.invoke('ui:navigate', value);
-  address.blur();
-});
+/** The 90s toolbar, throbber and status bar. */
+function renderLegacyChrome(tab: TabState | undefined, blockedText: string): void {
+  const tool = (action: string) => document.querySelector<HTMLButtonElement>(`.l-tool[data-action="${action}"]`)!;
+  tool('back').disabled = !tab?.canGoBack;
+  tool('forward').disabled = !tab?.canGoForward;
+  tool('stop').disabled = !tab?.loading;
+  $('l-throbber').classList.toggle('loading', !!tab?.loading);
+  document.body.classList.toggle('loading-page', !!tab?.loading);
+  $('l-title').textContent = tab && tab.url ? `Webscape Obfuscator - [${tab.title}]` : 'Webscape Obfuscator';
+  $('l-status').textContent = tab?.loading ? `Contacting host: ${tab.host || 'page'}...` : 'Document: Done';
+  const lock = $('l-lock');
+  lock.className = `l-lock ${!tab?.url ? '' : tab.secure ? 'secure' : 'insecure'}`;
+  lock.parentElement!.title = !tab?.url ? 'No page loaded' : tab.secure ? 'This page is encrypted (https)' : 'This page is NOT encrypted';
+  $('l-blocked').textContent = blockedText;
+}
+
+for (const field of addressFields) {
+  field.addEventListener('focus', () => {
+    editingAddress = true;
+    field.select();
+  });
+  field.addEventListener('blur', () => {
+    editingAddress = false;
+    renderChrome();
+  });
+  field.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      field.value = activeTab()?.url ?? '';
+      void api.invoke('ui:focusPage');
+    }
+  });
+  field.form!.addEventListener('submit', (e) => {
+    e.preventDefault();
+    const value = field.value.trim();
+    if (!value) return;
+    closeVault();
+    void api.invoke('ui:navigate', value);
+    field.blur();
+  });
+}
 
 const nav = (a: NavAction) => () => void api.invoke('ui:nav', a);
 $('back').addEventListener('click', nav('back'));
@@ -161,6 +186,50 @@ const newTab = () => {
 };
 $('new-tab').addEventListener('click', newTab);
 $('new-tab-row').addEventListener('click', newTab);
+$('legacy-toggle').addEventListener('click', () => void api.invoke('ui:setLegacy', true));
+
+// Legacy toolbar buttons
+const legacyActions: Record<string, () => void> = {
+  back: nav('back'),
+  forward: nav('forward'),
+  reload: nav('reload'),
+  stop: nav('stop'),
+  home: () => {
+    closeVault();
+    void api.invoke('ui:home');
+  },
+  search: () => {
+    closeVault();
+    void api.invoke('ui:navigate', 'https://duckduckgo.com/');
+  },
+  passwords: () => (vaultOpen ? closeVault() : openVault()),
+  'new-tab': newTab,
+  modern: () => void api.invoke('ui:setLegacy', false),
+};
+for (const btn of document.querySelectorAll<HTMLButtonElement>('[data-action]')) {
+  btn.addEventListener('click', () => legacyActions[btn.dataset.action!]?.());
+}
+
+// ---------------------------------------------------------------------------
+// Tell the main process where the page goes (it differs between the two looks).
+// ---------------------------------------------------------------------------
+let lastInsets = '';
+function reportLayout(): void {
+  const frame = $('page-frame');
+  const r = frame.getBoundingClientRect();
+  const inset = state.legacy ? 2 : 0; // stay inside the sunken bevel
+  const insets = {
+    left: r.left + inset,
+    top: r.top + inset,
+    right: window.innerWidth - r.right + inset,
+    bottom: window.innerHeight - r.bottom + inset,
+  };
+  const key = JSON.stringify(insets);
+  if (key === lastInsets) return;
+  lastInsets = key;
+  void api.invoke('ui:layout', insets);
+}
+new ResizeObserver(reportLayout).observe($('page-frame'));
 
 // ---------------------------------------------------------------------------
 // Login card: save prompt, or fill offer
@@ -361,9 +430,10 @@ $('gen-copy').addEventListener('click', async () => {
 // Wiring
 // ---------------------------------------------------------------------------
 function render(): void {
-  renderTabs();
   renderChrome();
+  renderTabs();
   renderLoginCard();
+  requestAnimationFrame(reportLayout); // the page slot moves when the look changes
 }
 
 let prevUnlocked = false;
@@ -382,8 +452,8 @@ api.onState((s) => {
 api.onCommand((cmd) => {
   if (cmd === 'focus-address') {
     closeVault();
-    address.focus();
-    address.select();
+    visibleAddress().focus();
+    visibleAddress().select();
   } else if (cmd === 'toggle-vault') {
     vaultOpen ? closeVault() : openVault();
   }

@@ -6,6 +6,15 @@ import type { TabState } from '../shared/types';
 import { blockedCount, forgetBlockedCount, setupSession } from './privacy';
 
 export const START_PAGE = pathToFileURL(path.join(__dirname, '../ui/newtab.html')).href;
+
+/** The start page, styled for the current UI mode (the hash tells the page which look to use). */
+export function startPageUrl(legacy: boolean): string {
+  return legacy ? `${START_PAGE}#legacy` : START_PAGE;
+}
+
+export function isStartPage(url: string): boolean {
+  return url.split('#')[0] === START_PAGE;
+}
 const ERROR_PAGE = pathToFileURL(path.join(__dirname, '../ui/error.html')).href;
 
 export interface Tab {
@@ -36,7 +45,7 @@ function tabPreferences(partition: string): WebPreferences {
 }
 
 export function displayUrl(url: string): string {
-  return url === START_PAGE ? '' : url;
+  return isStartPage(url) ? '' : url;
 }
 
 export class TabManager {
@@ -45,6 +54,8 @@ export class TabManager {
   /** When true the sidebar UI is showing a full-size panel (the vault) over the page area. */
   private overlay = false;
   private nextId = 1;
+  /** Legacy mode: square page corners and the retro start page. */
+  legacy = false;
   private partitionUsers = new Map<string, number>();
 
   constructor(
@@ -63,7 +74,7 @@ export class TabManager {
     return this.tabs.find((t) => t.view.webContents === wc);
   }
 
-  create(url: string = START_PAGE, opts: { partition?: string; webContents?: WebContents; linkedTo?: number; background?: boolean } = {}): Tab {
+  create(url: string = startPageUrl(this.legacy), opts: { partition?: string; webContents?: WebContents; linkedTo?: number; background?: boolean } = {}): Tab {
     const partition = opts.partition ?? `tab-${crypto.randomUUID()}`;
     const ses = session.fromPartition(partition);
     setupSession(ses, () => (this.win.isDestroyed() ? null : this.win), () => this.changed());
@@ -72,7 +83,7 @@ export class TabManager {
     const view = opts.webContents
       ? new WebContentsView({ webContents: opts.webContents })
       : new WebContentsView({ webPreferences: tabPreferences(partition) });
-    view.setBorderRadius(10);
+    view.setBorderRadius(this.legacy ? 0 : 10);
     view.setBackgroundColor('#ffffff');
 
     const tab: Tab = {
@@ -94,8 +105,8 @@ export class TabManager {
     if (!opts.webContents) view.webContents.loadURL(url).catch(() => {});
     // A blank start page leaves keyboard focus in the address bar. Attaching a
     // loading view can steal native focus, so hand it back once the page is up.
-    if (!opts.background) this.select(tab.id, url !== START_PAGE);
-    if (!opts.background && !opts.webContents && url === START_PAGE) {
+    if (!opts.background) this.select(tab.id, !isStartPage(url));
+    if (!opts.background && !opts.webContents && isStartPage(url)) {
       view.webContents.once('did-finish-load', () => {
         if (this.activeId === tab.id) this.focusAddress();
       });
@@ -118,7 +129,7 @@ export class TabManager {
     });
     wc.on('did-stop-loading', () => {
       tab.loading = false;
-      if (!wc.getTitle() || wc.getURL() === START_PAGE) tab.title = wc.getURL() === START_PAGE ? 'New Tab' : tab.url;
+      if (!wc.getTitle() || isStartPage(wc.getURL())) tab.title = isStartPage(wc.getURL()) ? 'New Tab' : tab.url;
       this.changed();
     });
     const onNavigate = (url: string) => {
@@ -262,6 +273,16 @@ export class TabManager {
     if (!on) tab.view.webContents.focus();
   }
 
+  /** Switch look: square corners in legacy mode, and restyle tabs sitting on the start page. */
+  setLegacy(on: boolean): void {
+    this.legacy = on;
+    for (const t of this.tabs) {
+      t.view.setBorderRadius(on ? 0 : 10);
+      const wc = t.view.webContents;
+      if (!wc.isDestroyed() && isStartPage(wc.getURL())) wc.loadURL(startPageUrl(on)).catch(() => {});
+    }
+  }
+
   layout(): void {
     this.active?.view.setBounds(this.bounds());
   }
@@ -271,7 +292,7 @@ export class TabManager {
       const wc = t.view.webContents;
       let host = '';
       try {
-        host = t.url === START_PAGE ? '' : new URL(t.url).host;
+        host = isStartPage(t.url) ? '' : new URL(t.url).host;
       } catch {
         /* ignore */
       }
@@ -294,7 +315,7 @@ export class TabManager {
 /** Turn address-bar input into a URL: URLs pass through, bare domains get https://, the rest is a DuckDuckGo search. */
 export function resolveInput(input: string): string {
   const text = input.trim();
-  if (!text) return START_PAGE;
+  if (!text) return START_PAGE; // caller swaps in the legacy start page if needed
   if (/^(https?|file|about|data):/i.test(text)) return text;
   if (/^(localhost|127\.0\.0\.1|\[::1\])(:\d+)?(\/|$)/i.test(text)) return `http://${text}`;
   if (!/\s/.test(text) && /^[^/]+\.[a-z]{2,}(:\d+)?(\/.*)?$/i.test(text)) return `https://${text}`;

@@ -15,6 +15,22 @@ A private-by-default web browser built on Chromium. Every tab has its own memory
 | **Tracker blocking in the network layer** | Requests to ads and trackers are cancelled before they leave the browser, using Ghostery's filter engine and its prebuilt ads-and-tracking lists. |
 | **No extensions** | Extensions are a major source of browser data leaks. Everything an extension would do here is built in. |
 
+### Legacy mode
+
+Press **⇧⌘L**, or use **View → Legacy Mode**, for a mid-90s desktop-browser look:
+
+- gray `#C0C0C0` chrome with 3D bevels and crisp, non-antialiased system type
+- a big labelled toolbar (Back, Forward, Reload, Home, Search, Passwords, Stop)
+- a globe throbber that spins while pages load
+- a `Location:` bar and a personal toolbar
+- tabs in a classic list box with navy selection
+- a status bar with a padlock, progress bar and tracker count
+- a 1996-style start page, where you are always visitor number 000001
+
+Switch back with **Modern look** on the personal toolbar. The look you choose is remembered. It's the only UI preference the browser saves.
+
+Legacy mode is an original homage to that era and uses no third-party logos or artwork.
+
 ### Other hardening
 
 - Sends `Sec-GPC: 1` (Global Privacy Control) and `DNT: 1` on every request.
@@ -61,6 +77,7 @@ The vault only saves and fills on `https://` origins, plus `http://localhost` fo
 | ⌃Tab / ⌃⇧Tab | Next / previous tab |
 | ⌘1…⌘9 | Jump to a tab (⌘9 = last) |
 | ⇧⌘P | Open the password vault |
+| ⇧⌘L | Toggle Legacy mode |
 | ⌥⌘I | Developer tools for the current tab |
 
 On Windows and Linux, use Ctrl instead of ⌘.
@@ -89,7 +106,7 @@ src/
   preload/
     ui-preload.ts  narrow, allow-listed bridge for the sidebar
     page-preload.ts  login-form detection and fill, in an isolated world
-  ui/              sidebar (HTML/CSS/TS), start page, error page
+  ui/              sidebar (HTML/CSS/TS), legacy.css (90s look), start page, error page
   shared/types.ts  types shared by main and UI
 ```
 
@@ -99,6 +116,7 @@ src/
 |---|---|
 | `vault.bin` | Your saved logins, encrypted with the OS keychain |
 | `blocker-engine.bin` | Compiled tracker filter lists (no personal data) |
+| `settings.json` | UI look (modern or legacy) |
 | Chromium housekeeping | GPU shader caches and the sidebar UI's own storage. Web pages never use this profile. |
 
 The folder is `~/Library/Application Support/Webscape Obfuscator` on macOS, `%APPDATA%` on Windows and `~/.config` on Linux.

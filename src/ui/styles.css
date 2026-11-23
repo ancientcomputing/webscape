@@ -23,12 +23,20 @@ body {
   background: var(--bg);
   display: grid;
   grid-template-columns: 272px 1fr;
+  grid-template-rows: minmax(0, 1fr);
+  grid-template-areas: "side page";
   overflow: hidden;
   user-select: none;
   -webkit-font-smoothing: antialiased;
 }
 button { font: inherit; color: inherit; }
 [hidden] { display: none !important; }
+.legacy-only { display: none !important; }
+body.legacy .modern-only { display: none !important; }
+
+/* ---------- Page slot: the web page view is placed over #page-frame ---------- */
+.page-slot { grid-area: page; padding: 8px 8px 8px 0; min-width: 0; min-height: 0; }
+.page-frame { width: 100%; height: 100%; border-radius: 10px; background: #151821; }
 svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; flex: none; }
 
 /* ---------- Sidebar ---------- */
@@ -37,7 +45,7 @@ svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width:
   flex-direction: column;
   padding: 0 10px 10px 12px;
   min-height: 0;
-  height: 100vh;
+  grid-area: side;
 }
 .titlebar {
   height: 52px;
@@ -204,6 +212,7 @@ svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width:
 
 /* ---------- Vault page ---------- */
 .vault-page {
+  grid-area: page;
   margin: 8px 8px 8px 0;
   border-radius: 10px;
   background: var(--panel);

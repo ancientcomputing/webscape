@@ -2,23 +2,74 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'self'; form-action https://duckduckgo.com">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'self'; script-src 'self'; form-action https://duckduckgo.com">
   <title>New Tab</title>
   <link rel="stylesheet" href="page.css">
+  <script src="newtab.js"></script>
 </head>
 <body class="sky">
-  <div class="stars" aria-hidden="true"></div>
-  <div class="comet" aria-hidden="true"></div>
-  <main class="center">
-    <h1 class="wordmark">Webscape <span>Obfuscator</span></h1>
-    <form action="https://duckduckgo.com/" method="get" class="search">
-      <input name="q" type="search" placeholder="Search privately with DuckDuckGo" autocomplete="off" spellcheck="false" aria-label="Search">
+  <!-- Modern start page -->
+  <div class="modern-page">
+    <div class="stars" aria-hidden="true"></div>
+    <div class="comet" aria-hidden="true"></div>
+    <main class="center">
+      <h1 class="wordmark">Webscape <span>Obfuscator</span></h1>
+      <form action="https://duckduckgo.com/" method="get" class="search">
+        <input name="q" type="search" placeholder="Search privately with DuckDuckGo" autocomplete="off" spellcheck="false" aria-label="Search">
+      </form>
+      <ul class="facts">
+        <li>This tab has its own memory. Close it and it's gone.</li>
+        <li>Nothing is written to disk except passwords you choose to save.</li>
+        <li>Trackers are blocked before they load.</li>
+      </ul>
+    </main>
+  </div>
+
+  <!-- Legacy start page: a 1996-style home page -->
+  <div class="legacy-page">
+    <table class="r-masthead" role="presentation">
+      <tr>
+        <td class="r-logo-cell"><div class="r-logo" aria-hidden="true"><span class="r-globe"></span><span class="r-star"></span></div></td>
+        <td>
+          <h1>Welcome to Webscape Obfuscator!</h1>
+          <p class="r-tagline"><i>The private way to surf the World Wide Web.</i></p>
+        </td>
+      </tr>
+    </table>
+
+    <hr>
+
+    <form action="https://duckduckgo.com/" method="get" class="r-search">
+      <b>Search the Web:</b>
+      <input name="q" type="text" size="40" autocomplete="off" spellcheck="false" aria-label="Search">
+      <input type="submit" value="Search">
+      <br><small>Powered by DuckDuckGo. Your search is not tied to you.</small>
     </form>
-    <ul class="facts">
-      <li>This tab has its own memory. Close it and it's gone.</li>
-      <li>Nothing is written to disk except passwords you choose to save.</li>
-      <li>Trackers are blocked before they load.</li>
+
+    <hr>
+
+    <h2><span class="r-new">NEW!</span> What's New?</h2>
+    <ul>
+      <li><b>Private tabs.</b> Every tab has its own memory. Close it and it's gone!</li>
+      <li><b>No cookies left behind.</b> Nothing is written to your hard disk except passwords you choose to save.</li>
+      <li><b>Tracker blocking.</b> Ad networks and trackers are stopped before they load.</li>
+      <li><b>Password Manager.</b> Click <u>Passwords</u> on the toolbar.</li>
     </ul>
-  </main>
+
+    <h2>Cool Sites</h2>
+    <ul class="r-links">
+      <li><a href="https://en.wikipedia.org/wiki/Special:Random">A random encyclopedia article</a></li>
+      <li><a href="https://archive.org/">The Internet Archive</a></li>
+      <li><a href="https://www.spacejam.com/1996/">A web page from 1996 that never went away</a></li>
+    </ul>
+
+    <hr>
+
+    <p class="r-counter">You are visitor number <span class="r-digits">000001</span></p>
+    <p class="r-small">(You always will be. This tab has no memory of you.)</p>
+
+    <hr>
+    <address>Best viewed with <b>any browser</b> at 800&times;600 or higher.<br>Last updated: today. And every day.</address>
+  </div>
 </body>
 </html>

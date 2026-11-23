@@ -29,6 +29,8 @@ export interface AppState {
   activeId: number | null;
   vaultUnlocked: boolean;
   vaultAvailable: boolean;
+  /** Retro 90s look. */
+  legacy: boolean;
   /** The active tab shows a password field and has a fillable origin. */
   loginForm: { origin: string } | null;
   savePrompt: SavePrompt | null;

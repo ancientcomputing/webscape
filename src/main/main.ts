@@ -1,15 +1,53 @@
 import { app, BaseWindow, clipboard, ipcMain, IpcMainEvent, IpcMainInvokeEvent, Menu, WebContentsView } from 'electron';
+import fs from 'node:fs';
 import path from 'node:path';
 import type { AppState, NavAction, SavePrompt, UICommand, VaultEntrySummary } from '../shared/types';
 import { cleanUserAgent, initBlocker } from './privacy';
-import { resolveInput, TabManager } from './tabs';
+import { resolveInput, startPageUrl, TabManager } from './tabs';
 import { fillableOrigin, Vault } from './vault';
 
 app.setName('Webscape Obfuscator');
 app.userAgentFallback = cleanUserAgent(app.userAgentFallback);
 
-const SIDEBAR_WIDTH = 272;
-const GUTTER = 8;
+/**
+ * Where the page sits inside the window, as insets from each edge. The sidebar
+ * UI measures its page slot and reports these (ui:layout), so each look can lay
+ * out its own chrome. This default matches the modern look until it reports.
+ */
+let insets = { left: 272, top: 8, right: 8, bottom: 8 };
+
+// ---------------------------------------------------------------------------
+// Settings: UI preferences only (never browsing data).
+// ---------------------------------------------------------------------------
+interface Settings {
+  legacy: boolean;
+}
+let settings: Settings = { legacy: false };
+const settingsFile = () => path.join(app.getPath('userData'), 'settings.json');
+
+function loadSettings(): void {
+  try {
+    const raw = JSON.parse(fs.readFileSync(settingsFile(), 'utf8')) as Partial<Settings>;
+    settings = { legacy: raw.legacy === true };
+  } catch {
+    /* first run */
+  }
+}
+
+function saveSettings(): void {
+  fs.writeFileSync(settingsFile(), JSON.stringify(settings, null, 2), { mode: 0o600 });
+}
+
+function setLegacy(on: boolean): void {
+  if (settings.legacy === on) return;
+  settings.legacy = on;
+  saveSettings();
+  tabs?.setLegacy(on);
+  ui?.setBackgroundColor(on ? '#c0c0c0' : '#0d0f14');
+  placeWindowButtons();
+  buildMenu();
+  pushState();
+}
 const CLIPBOARD_CLEAR_MS = 30_000;
 
 let win: BaseWindow | null = null;
@@ -46,6 +84,7 @@ function buildState(): AppState {
     activeId: tabs?.activeId ?? null,
     vaultUnlocked: vault?.unlocked ?? false,
     vaultAvailable: vault?.available ?? false,
+    legacy: settings.legacy,
     loginForm: active?.hasLoginForm && origin ? { origin } : null,
     savePrompt: prompt ? { tabId: prompt.tabId, origin: prompt.origin, username: prompt.username, update: prompt.update } : null,
   };
@@ -61,9 +100,16 @@ function sendCommand(cmd: UICommand): void {
 // Window
 // ---------------------------------------------------------------------------
 
+/** macOS window buttons: centred in the legacy title bar, or floating over the modern sidebar. */
+function placeWindowButtons(): void {
+  if (process.platform !== 'darwin' || !win) return;
+  win.setWindowButtonPosition(settings.legacy ? { x: 9, y: 9 } : { x: 16, y: 18 });
+}
+
 function contentBounds(): Electron.Rectangle {
   const { width, height } = win!.getContentBounds();
-  return { x: SIDEBAR_WIDTH, y: GUTTER, width: Math.max(0, width - SIDEBAR_WIDTH - GUTTER), height: Math.max(0, height - GUTTER * 2) };
+  const { left, top, right, bottom } = insets;
+  return { x: left, y: top, width: Math.max(0, width - left - right), height: Math.max(0, height - top - bottom) };
 }
 
 function createWindow(): void {
@@ -73,10 +119,12 @@ function createWindow(): void {
     minWidth: 760,
     minHeight: 480,
     title: 'Webscape Obfuscator',
-    backgroundColor: '#0d0f14',
+    backgroundColor: settings.legacy ? '#c0c0c0' : '#0d0f14',
     titleBarStyle: 'hiddenInset',
     trafficLightPosition: { x: 16, y: 18 },
   });
+
+  placeWindowButtons();
 
   ui = new WebContentsView({
     webPreferences: {
@@ -87,7 +135,7 @@ function createWindow(): void {
       spellcheck: false,
     },
   });
-  ui.setBackgroundColor('#0d0f14');
+  ui.setBackgroundColor(settings.legacy ? '#c0c0c0' : '#0d0f14');
   win.contentView.addChildView(ui);
   // The sidebar only ever shows our own local files.
   ui.webContents.on('will-navigate', (e) => e.preventDefault());
@@ -101,6 +149,7 @@ function createWindow(): void {
   };
 
   tabs = new TabManager(win, contentBounds, pushState, () => sendCommand('focus-address'));
+  tabs.legacy = settings.legacy;
   layout();
   win.on('resize', layout);
   win.on('closed', () => {
@@ -161,6 +210,18 @@ function registerUIHandlers(): void {
     if (action === 'stop') wc.stop();
   });
   handle('ui:focusPage', () => tabs?.active?.view.webContents.focus());
+  handle('ui:setLegacy', (on: boolean) => setLegacy(on === true));
+  handle('ui:home', () => {
+    const tab = tabs?.active;
+    if (tab) tab.view.webContents.loadURL(startPageUrl(settings.legacy)).catch(() => {});
+  });
+  handle('ui:layout', (next: unknown) => {
+    const n = next as Record<string, unknown>;
+    const ok = (v: unknown) => typeof v === 'number' && Number.isFinite(v) && v >= 0 && v < 2000;
+    if (!n || !ok(n.left) || !ok(n.top) || !ok(n.right) || !ok(n.bottom)) return;
+    insets = { left: Math.round(n.left as number), top: Math.round(n.top as number), right: Math.round(n.right as number), bottom: Math.round(n.bottom as number) };
+    tabs?.layout();
+  });
   handle('ui:overlay', (on: boolean) => tabs?.setOverlay(on === true));
 
   // --- Passwords ---------------------------------------------------------
@@ -289,6 +350,8 @@ function buildMenu(): void {
         { type: 'separator' },
         { label: 'Developer Tools', accelerator: isMac ? 'Alt+Cmd+I' : 'Ctrl+Shift+I', click: () => wc()?.toggleDevTools() },
         { role: 'togglefullscreen' },
+        { type: 'separator' },
+        { label: 'Legacy Mode', type: 'checkbox', checked: settings.legacy, accelerator: 'CmdOrCtrl+Shift+L', click: (item) => setLegacy(item.checked) },
       ],
     },
     {
@@ -328,6 +391,7 @@ if (!app.requestSingleInstanceLock()) {
   });
 
   app.whenReady().then(() => {
+    loadSettings();
     vault = new Vault(path.join(app.getPath('userData'), 'vault.bin'), pushState);
     void initBlocker(app.getPath('userData'));
     registerUIHandlers();
