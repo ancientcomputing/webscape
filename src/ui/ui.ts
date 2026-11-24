@@ -34,7 +34,7 @@ function icon(d: string): SVGSVGElement {
   return svg;
 }
 
-let state: AppState = { tabs: [], activeId: null, vaultUnlocked: false, vaultAvailable: true, legacy: false, loginForm: null, savePrompt: null };
+let state: AppState = { tabs: [], activeId: null, vaultUnlocked: false, vaultAvailable: true, legacy: false, theme: 'system', dark: true, loginForm: null, savePrompt: null };
 let vaultOpen = false;
 let fillChoices: { origin: string; entries: VaultEntrySummary[] } | null = null;
 
@@ -113,11 +113,11 @@ const address = $<HTMLInputElement>('address');
 const legacyAddress = $<HTMLInputElement>('l-address');
 const addressFields = [address, legacyAddress];
 let editingAddress = false;
-const visibleAddress = () => (state.legacy ? legacyAddress : address);
 
 function renderChrome(): void {
   const tab = activeTab();
   document.body.classList.toggle('legacy', state.legacy);
+  document.body.classList.toggle('light', !state.dark);
   if (!editingAddress) for (const f of addressFields) f.value = tab?.url ?? '';
   ($('back') as HTMLButtonElement).disabled = !tab?.canGoBack;
   ($('forward') as HTMLButtonElement).disabled = !tab?.canGoForward;
@@ -143,7 +143,7 @@ function renderLegacyChrome(tab: TabState | undefined, blockedText: string): voi
   tool('stop').disabled = !tab?.loading;
   $('l-throbber').classList.toggle('loading', !!tab?.loading);
   document.body.classList.toggle('loading-page', !!tab?.loading);
-  $('l-title').textContent = tab && tab.url ? `Webscape Obfuscator - [${tab.title}]` : 'Webscape Obfuscator';
+  $('l-title').textContent = tab && tab.url ? `Webscape Wanderer - [${tab.title}]` : 'Webscape Wanderer';
   $('l-status').textContent = tab?.loading ? `Contacting host: ${tab.host || 'page'}...` : 'Document: Done';
   const lock = $('l-lock');
   lock.className = `l-lock ${!tab?.url ? '' : tab.secure ? 'secure' : 'insecure'}`;
@@ -151,7 +151,31 @@ function renderLegacyChrome(tab: TabState | undefined, blockedText: string): voi
   $('l-blocked').textContent = blockedText;
 }
 
-for (const field of addressFields) {
+// Modern look: the sidebar address is a compact summary. Hovering shows the whole
+// address in a wide floating box; clicking (or ⌘L) opens that box for typing.
+function openAddressBox(mode: 'peek' | 'edit'): void {
+  const r = $('address-form').getBoundingClientRect();
+  void api.invoke('ui:addressPopover', mode, { x: r.left, y: r.top });
+}
+let hoverTimer: number | undefined;
+$('address-form').addEventListener('mouseenter', () => {
+  clearTimeout(hoverTimer);
+  hoverTimer = window.setTimeout(() => openAddressBox('peek'), 250);
+});
+$('address-form').addEventListener('mouseleave', () => clearTimeout(hoverTimer));
+address.readOnly = true;
+address.addEventListener('mousedown', (e) => {
+  e.preventDefault();
+  clearTimeout(hoverTimer);
+  openAddressBox('edit');
+});
+address.addEventListener('focus', () => {
+  // Keyboard focus (Tab) lands here: hand it to the big box.
+  address.blur();
+  openAddressBox('edit');
+});
+
+for (const field of [legacyAddress]) {
   field.addEventListener('focus', () => {
     editingAddress = true;
     field.select();
@@ -187,6 +211,7 @@ const newTab = () => {
 $('new-tab').addEventListener('click', newTab);
 $('new-tab-row').addEventListener('click', newTab);
 $('legacy-toggle').addEventListener('click', () => void api.invoke('ui:setLegacy', true));
+$('theme-toggle').addEventListener('click', () => void api.invoke('ui:setTheme', state.dark ? 'light' : 'dark'));
 
 // Legacy toolbar buttons
 const legacyActions: Record<string, () => void> = {
@@ -452,8 +477,12 @@ api.onState((s) => {
 api.onCommand((cmd) => {
   if (cmd === 'focus-address') {
     closeVault();
-    visibleAddress().focus();
-    visibleAddress().select();
+    if (state.legacy) {
+      legacyAddress.focus();
+      legacyAddress.select();
+    } else {
+      openAddressBox('edit');
+    }
   } else if (cmd === 'toggle-vault') {
     vaultOpen ? closeVault() : openVault();
   }

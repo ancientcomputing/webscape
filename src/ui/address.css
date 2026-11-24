@@ -1,0 +1,52 @@
+/* The floating address box. The view is transparent; the box sits inside a
+   padding that leaves room for its shadow (the main process sets --pad). */
+html, body.popover-body {
+  background: transparent !important;
+  display: block;
+  height: auto;
+  overflow: hidden;
+  user-select: text;
+}
+body.popover-body { padding: var(--pad, 10px); }
+
+.pop {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: start;
+  gap: 4px 10px;
+  padding: 10px 14px;
+  background: var(--panel);
+  border: 1px solid var(--accent);
+  border-radius: 12px;
+  box-shadow: 0 0 0 3px #8aa4ff22, 0 10px 28px #0000004d;
+}
+.pop-lock { width: 9px; height: 9px; border-radius: 50%; margin-top: 7px; }
+.pop-lock.secure { background: var(--good); }
+.pop-lock.insecure { background: var(--warn); }
+.pop-lock.none { background: var(--faint); }
+
+.pop-peek, .pop-edit {
+  font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, sans-serif;
+  color: var(--text);
+  word-break: break-all;
+  min-height: 22px;
+}
+.pop-peek { cursor: text; }
+.pop-peek .dim { color: var(--faint); }
+.pop-peek .host { color: var(--text); font-weight: 600; }
+.pop-peek .rest { color: var(--muted); }
+.pop-peek .empty { color: var(--faint); }
+
+.pop-edit {
+  display: none;
+  width: 100%;
+  resize: none;
+  border: 0; outline: 0; padding: 0; margin: 0;
+  background: transparent;
+  overflow: hidden;
+}
+.pop-edit::placeholder { color: var(--faint); }
+.pop[data-mode="edit"] .pop-peek { display: none; }
+.pop[data-mode="edit"] .pop-edit { display: block; }
+
+.pop-hint { grid-column: 2; font-size: 11px; color: var(--faint); }

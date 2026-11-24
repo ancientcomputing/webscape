@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'">
+  <title>Address</title>
+  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="address.css">
+  <script type="module" src="address.js"></script>
+</head>
+<body class="popover-body">
+  <div id="pop" class="pop" data-mode="peek">
+    <span id="lock" class="pop-lock" aria-hidden="true"></span>
+    <div id="peek" class="pop-peek" title="Click to edit"></div>
+    <textarea id="edit" class="pop-edit" rows="1" spellcheck="false" autocomplete="off" aria-label="Address"
+      placeholder="Search or enter address"></textarea>
+    <div class="pop-hint" id="hint"></div>
+  </div>
+</body>
+</html>

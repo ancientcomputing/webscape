@@ -1,12 +1,13 @@
-import { app, BaseWindow, clipboard, ipcMain, IpcMainEvent, IpcMainInvokeEvent, Menu, WebContentsView } from 'electron';
+import { app, BaseWindow, clipboard, ipcMain, IpcMainEvent, IpcMainInvokeEvent, Menu, nativeTheme, WebContentsView } from 'electron';
 import fs from 'node:fs';
 import path from 'node:path';
-import type { AppState, NavAction, SavePrompt, UICommand, VaultEntrySummary } from '../shared/types';
+import type { AppState, NavAction, SavePrompt, ThemeSetting, UICommand, VaultEntrySummary } from '../shared/types';
 import { cleanUserAgent, initBlocker } from './privacy';
 import { resolveInput, startPageUrl, TabManager } from './tabs';
 import { fillableOrigin, Vault } from './vault';
 
-app.setName('Webscape Obfuscator');
+app.setName('Webscape Wanderer');
+const ICON = path.join(__dirname, '../../build/icon.png');
 app.userAgentFallback = cleanUserAgent(app.userAgentFallback);
 
 /**
@@ -21,14 +22,18 @@ let insets = { left: 272, top: 8, right: 8, bottom: 8 };
 // ---------------------------------------------------------------------------
 interface Settings {
   legacy: boolean;
+  theme: ThemeSetting;
 }
-let settings: Settings = { legacy: false };
+let settings: Settings = { legacy: false, theme: 'system' };
 const settingsFile = () => path.join(app.getPath('userData'), 'settings.json');
 
 function loadSettings(): void {
   try {
     const raw = JSON.parse(fs.readFileSync(settingsFile(), 'utf8')) as Partial<Settings>;
-    settings = { legacy: raw.legacy === true };
+    settings = {
+      legacy: raw.legacy === true,
+      theme: raw.theme === 'light' || raw.theme === 'dark' ? raw.theme : 'system',
+    };
   } catch {
     /* first run */
   }
@@ -38,12 +43,31 @@ function saveSettings(): void {
   fs.writeFileSync(settingsFile(), JSON.stringify(settings, null, 2), { mode: 0o600 });
 }
 
+/** Background behind the UI while it paints: legacy gray, or the modern theme's base color. */
+function chromeColor(): string {
+  if (settings.legacy) return '#c0c0c0';
+  return nativeTheme.shouldUseDarkColors ? '#15171e' : '#eceef3';
+}
+
+/**
+ * Light / dark / follow the system. Setting nativeTheme.themeSource also sets
+ * prefers-color-scheme for the sidebar, the start page and web pages, so sites
+ * that support dark mode follow along.
+ */
+function setTheme(theme: ThemeSetting): void {
+  settings.theme = theme;
+  nativeTheme.themeSource = theme;
+  saveSettings();
+  buildMenu();
+  pushState();
+}
+
 function setLegacy(on: boolean): void {
   if (settings.legacy === on) return;
   settings.legacy = on;
   saveSettings();
   tabs?.setLegacy(on);
-  ui?.setBackgroundColor(on ? '#c0c0c0' : '#0d0f14');
+  ui?.setBackgroundColor(chromeColor());
   placeWindowButtons();
   buildMenu();
   pushState();
@@ -52,6 +76,10 @@ const CLIPBOARD_CLEAR_MS = 30_000;
 
 let win: BaseWindow | null = null;
 let ui: WebContentsView | null = null;
+/** The floating address box (modern look): a small transparent view stacked above the page. */
+let popover: WebContentsView | null = null;
+let popoverMode: 'peek' | 'edit' | null = null;
+let popoverHeight = 64;
 let tabs: TabManager | null = null;
 let vault: Vault | null = null;
 
@@ -69,9 +97,11 @@ function pushState(): void {
   setImmediate(() => {
     stateQueued = false;
     if (!ui || ui.webContents.isDestroyed()) return;
-    ui.webContents.send('state', buildState());
+    const st = buildState();
+    ui.webContents.send('state', st);
+    if (popover && !popover.webContents.isDestroyed()) popover.webContents.send('state', st);
     const active = tabs?.active;
-    if (win && !win.isDestroyed()) win.setTitle(active ? `${active.title} — Webscape Obfuscator` : 'Webscape Obfuscator');
+    if (win && !win.isDestroyed()) win.setTitle(active ? `${active.title} — Webscape Wanderer` : 'Webscape Wanderer');
   });
 }
 
@@ -85,6 +115,8 @@ function buildState(): AppState {
     vaultUnlocked: vault?.unlocked ?? false,
     vaultAvailable: vault?.available ?? false,
     legacy: settings.legacy,
+    theme: settings.theme,
+    dark: nativeTheme.shouldUseDarkColors,
     loginForm: active?.hasLoginForm && origin ? { origin } : null,
     savePrompt: prompt ? { tabId: prompt.tabId, origin: prompt.origin, username: prompt.username, update: prompt.update } : null,
   };
@@ -118,8 +150,8 @@ function createWindow(): void {
     height: 880,
     minWidth: 760,
     minHeight: 480,
-    title: 'Webscape Obfuscator',
-    backgroundColor: settings.legacy ? '#c0c0c0' : '#0d0f14',
+    title: 'Webscape Wanderer',
+    backgroundColor: chromeColor(),
     titleBarStyle: 'hiddenInset',
     trafficLightPosition: { x: 16, y: 18 },
   });
@@ -135,7 +167,7 @@ function createWindow(): void {
       spellcheck: false,
     },
   });
-  ui.setBackgroundColor(settings.legacy ? '#c0c0c0' : '#0d0f14');
+  ui.setBackgroundColor(chromeColor());
   win.contentView.addChildView(ui);
   // The sidebar only ever shows our own local files.
   ui.webContents.on('will-navigate', (e) => e.preventDefault());
@@ -151,12 +183,21 @@ function createWindow(): void {
   tabs = new TabManager(win, contentBounds, pushState, () => sendCommand('focus-address'));
   tabs.legacy = settings.legacy;
   layout();
-  win.on('resize', layout);
+  win.on('resize', () => {
+    layout();
+    if (popoverMode) placePopover();
+  });
+  win.on('blur', () => {
+    if (popoverMode === 'peek') closePopover(false);
+  });
   win.on('closed', () => {
     win = null;
+    popover = null;
     ui = null;
     tabs = null;
   });
+
+  createPopover();
 
   ui.webContents.once('did-finish-load', () => {
     tabs!.create();
@@ -169,7 +210,70 @@ function createWindow(): void {
 // ---------------------------------------------------------------------------
 
 function fromUI(e: IpcMainEvent | IpcMainInvokeEvent): boolean {
-  return !!ui && e.sender === ui.webContents && e.senderFrame === ui.webContents.mainFrame;
+  for (const v of [ui, popover]) {
+    if (v && e.sender === v.webContents && e.senderFrame === v.webContents.mainFrame) return true;
+  }
+  return false;
+}
+
+// ---------------------------------------------------------------------------
+// Floating address box
+// ---------------------------------------------------------------------------
+
+/** Room around the box for its drop shadow (the view itself is transparent). */
+const POPOVER_PAD = 10;
+let popoverAnchor = { x: 12, y: 52 };
+
+function createPopover(): void {
+  popover = new WebContentsView({
+    webPreferences: {
+      preload: path.join(__dirname, '../preload/ui-preload.js'),
+      sandbox: true,
+      contextIsolation: true,
+      nodeIntegration: false,
+      spellcheck: false,
+    },
+  });
+  popover.setBackgroundColor('#00000000');
+  popover.webContents.on('will-navigate', (e) => e.preventDefault());
+  popover.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  popover.webContents.loadFile(path.join(__dirname, '../ui/address.html'));
+  // Close the editor when focus moves elsewhere in the browser, but keep it
+  // (and what you typed) when you just switch to another app.
+  popover.webContents.on('blur', () => {
+    setTimeout(() => {
+      if (popoverMode === 'edit' && win?.isFocused() && !popover?.webContents.isFocused()) closePopover(false);
+    }, 60);
+  });
+}
+
+function placePopover(): void {
+  if (!win || !popover) return;
+  const { width } = win.getContentBounds();
+  const x = Math.max(0, popoverAnchor.x - POPOVER_PAD);
+  const y = Math.max(0, popoverAnchor.y - POPOVER_PAD);
+  // Stretch across the window so the whole address is visible.
+  const w = Math.max(320, Math.min(width - x - 8, 1200));
+  popover.setBounds({ x, y, width: w, height: popoverHeight });
+}
+
+function openPopover(mode: 'peek' | 'edit', anchor?: { x: number; y: number }): void {
+  if (!win || !popover || settings.legacy) return;
+  if (anchor) popoverAnchor = anchor;
+  // Don't downgrade an open editor to a peek.
+  if (popoverMode === 'edit' && mode === 'peek') return;
+  popoverMode = mode;
+  win.contentView.addChildView(popover); // (re)adding puts it on top of the page
+  placePopover();
+  popover.webContents.send('popover', { mode, pad: POPOVER_PAD });
+  if (mode === 'edit') popover.webContents.focus();
+}
+
+function closePopover(refocusPage: boolean): void {
+  if (!win || !popover || !popoverMode) return;
+  popoverMode = null;
+  win.contentView.removeChildView(popover);
+  if (refocusPage) tabs?.active?.view.webContents.focus();
 }
 
 function handle<T extends unknown[], R>(channel: string, fn: (...args: T) => R | Promise<R>): void {
@@ -196,6 +300,7 @@ function registerUIHandlers(): void {
   handle('ui:select', (id: number) => tabs?.select(id));
   handle('ui:close', (id: number) => tabs?.close(id));
   handle('ui:navigate', (input: string) => {
+    closePopover(false);
     const tab = tabs?.active;
     if (!tab) return;
     tab.view.webContents.loadURL(resolveInput(input)).catch(() => {});
@@ -210,7 +315,25 @@ function registerUIHandlers(): void {
     if (action === 'stop') wc.stop();
   });
   handle('ui:focusPage', () => tabs?.active?.view.webContents.focus());
-  handle('ui:setLegacy', (on: boolean) => setLegacy(on === true));
+  handle('ui:setLegacy', (on: boolean) => {
+    closePopover(false);
+    setLegacy(on === true);
+  });
+  handle('ui:addressPopover', (mode: unknown, anchor: unknown) => {
+    const a = anchor as { x?: unknown; y?: unknown } | undefined;
+    const ok = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v) && v >= 0 && v < 4000;
+    if (mode !== 'peek' && mode !== 'edit') return;
+    openPopover(mode, a && ok(a.x) && ok(a.y) ? { x: a.x, y: a.y } : undefined);
+  });
+  handle('ui:addressPopoverClose', (refocusPage: unknown) => closePopover(refocusPage === true));
+  handle('ui:addressPopoverHeight', (h: unknown) => {
+    if (typeof h !== 'number' || !Number.isFinite(h)) return;
+    popoverHeight = Math.max(40, Math.min(Math.round(h), 400));
+    if (popoverMode) placePopover();
+  });
+  handle('ui:setTheme', (theme: ThemeSetting) => {
+    if (theme === 'system' || theme === 'light' || theme === 'dark') setTheme(theme);
+  });
   handle('ui:home', () => {
     const tab = tabs?.active;
     if (tab) tab.view.webContents.loadURL(startPageUrl(settings.legacy)).catch(() => {});
@@ -351,6 +474,15 @@ function buildMenu(): void {
         { label: 'Developer Tools', accelerator: isMac ? 'Alt+Cmd+I' : 'Ctrl+Shift+I', click: () => wc()?.toggleDevTools() },
         { role: 'togglefullscreen' },
         { type: 'separator' },
+        {
+          label: 'Appearance',
+          submenu: (['system', 'light', 'dark'] as const).map((t) => ({
+            label: t === 'system' ? 'Match System' : t === 'light' ? 'Light' : 'Dark',
+            type: 'radio' as const,
+            checked: settings.theme === t,
+            click: () => setTheme(t),
+          })),
+        },
         { label: 'Legacy Mode', type: 'checkbox', checked: settings.legacy, accelerator: 'CmdOrCtrl+Shift+L', click: (item) => setLegacy(item.checked) },
       ],
     },
@@ -392,6 +524,23 @@ if (!app.requestSingleInstanceLock()) {
 
   app.whenReady().then(() => {
     loadSettings();
+    nativeTheme.themeSource = settings.theme;
+    nativeTheme.on('updated', () => {
+      ui?.setBackgroundColor(chromeColor());
+      win?.setBackgroundColor(chromeColor());
+      pushState();
+    });
+    app.setAboutPanelOptions({
+      applicationName: 'Webscape Wanderer',
+      applicationVersion: app.getVersion(),
+      version: `Chromium ${process.versions.chrome}`,
+      copyright: 'Open source under the Apache License 2.0',
+      credits: 'Private by default: every tab has its own memory, and nothing you browse is written to disk.',
+      website: 'https://github.com/ancientcomputing/webscape',
+      iconPath: ICON,
+    });
+    // Packaged builds get their icon from the bundle; dev runs borrow Electron's otherwise.
+    if (process.platform === 'darwin' && !app.isPackaged && fs.existsSync(ICON)) app.dock?.setIcon(ICON);
     vault = new Vault(path.join(app.getPath('userData'), 'vault.bin'), pushState);
     void initBlocker(app.getPath('userData'));
     registerUIHandlers();

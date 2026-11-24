@@ -1,4 +1,4 @@
-# Webscape Obfuscator
+# Webscape Wanderer
 
 A private-by-default web browser built on Chromium. Every tab has its own memory, nothing about your browsing is written to disk, tabs are vertical, and passwords are built in. There are no extensions.
 
@@ -15,11 +15,19 @@ A private-by-default web browser built on Chromium. Every tab has its own memory
 | **Tracker blocking in the network layer** | Requests to ads and trackers are cancelled before they leave the browser, using Ghostery's filter engine and its prebuilt ads-and-tracking lists. |
 | **No extensions** | Extensions are a major source of browser data leaks. Everything an extension would do here is built in. |
 
+### Floating address box
+
+The sidebar shows a compact address. Hover over it and the **whole address** appears in a wide box floating over the page, with the site's domain in bold so look-alike domains stand out. Click it, or press **⌘L**, and the same box becomes a full-width field for typing. Return goes there; Esc cancels. If you switch to another app, the box stays open with what you typed.
+
+### Light and dark
+
+The modern look follows your system's light or dark setting. To force one, use **View → Appearance** or the sun/moon button at the top of the sidebar. Web pages that support dark mode follow along.
+
 ### Legacy mode
 
 Press **⇧⌘L**, or use **View → Legacy Mode**, for a mid-90s desktop-browser look:
 
-- gray `#C0C0C0` chrome with 3D bevels and crisp, non-antialiased system type
+- gray `#C0C0C0` chrome with 3D bevels and 12px Verdana, legible on high-DPI screens
 - a big labelled toolbar (Back, Forward, Reload, Home, Search, Passwords, Stop)
 - a globe throbber that spins while pages load
 - a `Location:` bar and a personal toolbar
@@ -71,7 +79,7 @@ The vault only saves and fills on `https://` origins, plus `http://localhost` fo
 | Shortcut | Action |
 |---|---|
 | ⌘T / ⌘W | New private tab / close tab |
-| ⌘L | Focus the address bar |
+| ⌘L | Open the address box for typing |
 | ⌘R / ⇧⌘R | Reload / reload ignoring cache |
 | ⌘[ / ⌘] | Back / forward |
 | ⌃Tab / ⌃⇧Tab | Next / previous tab |
@@ -91,6 +99,7 @@ git clone https://github.com/ancientcomputing/webscape.git
 cd webscape
 npm install
 npm start          # builds the TypeScript and launches the browser
+npm run icon       # re-renders build/icon.png from build/icon.svg
 npm run dist       # packages a .dmg / AppImage / installer into release/ with electron-builder
 ```
 
@@ -108,6 +117,8 @@ src/
     page-preload.ts  login-form detection and fill, in an isolated world
   ui/              sidebar (HTML/CSS/TS), legacy.css (90s look), start page, error page
   shared/types.ts  types shared by main and UI
+build/             app icon (SVG source, PNG, ICNS)
+scripts/           build helpers; dev-app-name.mjs names the dev Electron.app "Webscape Wanderer"
 ```
 
 ## What is stored on disk
@@ -116,10 +127,10 @@ src/
 |---|---|
 | `vault.bin` | Your saved logins, encrypted with the OS keychain |
 | `blocker-engine.bin` | Compiled tracker filter lists (no personal data) |
-| `settings.json` | UI look (modern or legacy) |
+| `settings.json` | UI look (modern or legacy, light or dark) |
 | Chromium housekeeping | GPU shader caches and the sidebar UI's own storage. Web pages never use this profile. |
 
-The folder is `~/Library/Application Support/Webscape Obfuscator` on macOS, `%APPDATA%` on Windows and `~/.config` on Linux.
+The folder is `~/Library/Application Support/Webscape Wanderer` on macOS, `%APPDATA%` on Windows and `~/.config` on Linux.
 
 ## Limitations
 
@@ -137,4 +148,4 @@ Issues and pull requests are welcome. Please keep the core promise intact: **no 
 
 ## License
 
-[Apache License 2.0](LICENSE). Webscape Obfuscator is an independent project and isn't affiliated with Netscape, AOL or Google.
+[Apache License 2.0](LICENSE). Webscape Wanderer is an independent project and isn't affiliated with Netscape, AOL or Google.

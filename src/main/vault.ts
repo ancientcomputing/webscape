@@ -15,7 +15,7 @@ interface Entry {
 const AUTO_LOCK_MS = 10 * 60 * 1000;
 
 /**
- * The password vault: the only thing Webscape Obfuscator ever writes to disk about you.
+ * The password vault: the only thing Webscape Wanderer ever writes to disk about you.
  *
  * - The file is encrypted with Electron's safeStorage, whose key lives in the
  *   macOS Keychain (DPAPI on Windows, libsecret/kwallet on Linux).

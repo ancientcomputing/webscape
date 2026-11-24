@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'">
-  <title>Webscape Obfuscator</title>
+  <title>Webscape Wanderer</title>
   <link rel="stylesheet" href="styles.css">
   <link rel="stylesheet" href="legacy.css">
   <script type="module" src="ui.js"></script>
@@ -11,7 +11,7 @@
 <body>
   <!-- ===== Legacy (90s) chrome: title bar, toolbars, location bar ===== -->
   <header id="legacy-top" class="legacy-only">
-    <div class="l-titlebar"><span id="l-title">Webscape Obfuscator</span></div>
+    <div class="l-titlebar"><span id="l-title">Webscape Wanderer</span></div>
 
     <div class="l-toolbar" role="toolbar" aria-label="Navigation">
       <button class="l-tool" data-action="back" title="Back">
@@ -36,7 +36,7 @@
         <svg viewBox="0 0 24 24"><path class="f-stop" d="M8 2h8l6 6v8l-6 6H8l-6-6V8z"/><path class="s-white" d="m8.5 8.5 7 7M15.5 8.5l-7 7"/></svg><span>Stop</span>
       </button>
       <div class="l-flex"></div>
-      <div id="l-throbber" class="l-throbber" title="Webscape Obfuscator" aria-hidden="true">
+      <div id="l-throbber" class="l-throbber" title="Webscape Wanderer" aria-hidden="true">
         <div class="globe"><span class="meridian"></span><span class="equator"></span></div>
         <div class="orbit"><span class="star"></span></div>
       </div>
@@ -61,6 +61,10 @@
   <aside class="sidebar">
     <header class="titlebar modern-only">
       <div class="nav">
+        <button id="theme-toggle" class="icon" title="Switch light / dark (View → Appearance to match the system)" aria-label="Switch light or dark">
+          <svg viewBox="0 0 16 16" class="i-sun"><circle cx="8" cy="8" r="3"/><path d="M8 1.5v1.5M8 13v1.5M1.5 8H3M13 8h1.5M3.4 3.4l1 1M11.6 11.6l1 1M3.4 12.6l1-1M11.6 4.4l1-1"/></svg>
+          <svg viewBox="0 0 16 16" class="i-moon"><path d="M13 9.5A5.5 5.5 0 1 1 6.5 3a4.5 4.5 0 0 0 6.5 6.5z"/></svg>
+        </button>
         <button id="legacy-toggle" class="icon" title="Legacy mode (⇧⌘L)" aria-label="Legacy mode">
           <svg viewBox="0 0 16 16"><rect x="2" y="2.5" width="12" height="8.5" rx="1"/><path d="M6 14h4M8 11v3"/></svg>
         </button>
@@ -122,7 +126,7 @@
       <header class="vault-header">
         <div>
           <h1>Passwords</h1>
-          <p class="muted">Encrypted with your system keychain. Your saved logins are the only thing Webscape Obfuscator keeps after you quit.</p>
+          <p class="muted">Encrypted with your system keychain. Your saved logins are the only thing Webscape Wanderer keeps after you quit.</p>
         </div>
         <div class="vault-actions">
           <button id="vault-lock" class="btn ghost">Lock</button>

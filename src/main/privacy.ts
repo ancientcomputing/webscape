@@ -46,7 +46,8 @@ export function forgetBlockedCount(webContentsId: number): void {
 
 /** Make a Chrome-looking user agent: drop the "Electron/x" and app tokens that break sign-in pages and aid fingerprinting. */
 export function cleanUserAgent(ua: string): string {
-  return ua.replace(/ Electron\/\S+/, '').replace(/ webscape-obfuscator\/\S+/i, '').replace(/ Webscape Obfuscator\/\S+/i, '');
+  // Electron also appends "<app name>/<version>"; drop any token for this app.
+  return ua.replace(/ Electron\/\S+/, '').replace(/ webscape[\w -]*\/[\d.]+/gi, '');
 }
 
 /**

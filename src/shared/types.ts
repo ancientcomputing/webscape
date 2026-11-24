@@ -31,6 +31,9 @@ export interface AppState {
   vaultAvailable: boolean;
   /** Retro 90s look. */
   legacy: boolean;
+  /** The user's appearance choice, and whether dark colors are in effect right now. */
+  theme: ThemeSetting;
+  dark: boolean;
   /** The active tab shows a password field and has a fillable origin. */
   loginForm: { origin: string } | null;
   savePrompt: SavePrompt | null;
@@ -42,6 +45,8 @@ export interface VaultEntrySummary {
   username: string;
   updated: number;
 }
+
+export type ThemeSetting = 'system' | 'light' | 'dark';
 
 export type NavAction = 'back' | 'forward' | 'reload' | 'stop';
 

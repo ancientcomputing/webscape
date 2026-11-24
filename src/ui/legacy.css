@@ -21,8 +21,11 @@ body.legacy {
   --pressed: inset 1px 1px var(--dark), inset -1px -1px var(--hilite), inset 2px 2px var(--shadow), inset -2px -2px var(--light);
   --groove: inset 1px 1px var(--shadow), inset -1px -1px var(--hilite), 1px 1px var(--hilite), -1px -1px var(--shadow);
 
-  font: 11px/1.3 Geneva, Tahoma, Verdana, "MS Sans Serif", sans-serif;
-  -webkit-font-smoothing: none;
+  /* Verdana is the sturdiest 90s-era UI face that ships with every Mac and PC;
+     12px with normal antialiasing stays legible on high-DPI screens. */
+  --ui-font: Verdana, Tahoma, Geneva, sans-serif;
+  font: 12px/1.35 var(--ui-font);
+  -webkit-font-smoothing: subpixel-antialiased;
   color: var(--ink);
   background: var(--face);
   grid-template-columns: 188px minmax(0, 1fr);
@@ -41,7 +44,7 @@ body.legacy button { font: inherit; color: var(--ink); }
 
 /* ---------- Title bar ---------- */
 .l-titlebar {
-  height: 24px;
+  height: 26px;
   margin: 3px 3px 0;
   padding-left: 68px; /* room for the macOS window buttons */
   display: flex; align-items: center;
@@ -66,12 +69,12 @@ body.legacy button { font: inherit; color: var(--ink); }
   box-shadow: inset 1px 1px var(--hilite), inset -1px -1px var(--shadow);
 }
 .l-tool {
-  width: 58px; height: 46px;
+  min-width: 64px; height: 50px; padding: 0 4px;
   display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
   background: var(--face); border: 0; padding: 0;
 }
 .l-tool:hover:not(:disabled) { box-shadow: var(--raised); }
-.l-tool:active:not(:disabled) { box-shadow: var(--pressed); padding: 2px 0 0 2px; }
+.l-tool:active:not(:disabled) { box-shadow: var(--pressed); padding: 2px 2px 0 6px; }
 .l-tool svg { width: 24px; height: 24px; stroke: none; fill: none; stroke-width: 2; }
 .l-tool:disabled { color: var(--shadow); text-shadow: 1px 1px var(--hilite); }
 .l-tool:disabled svg { filter: grayscale(1) opacity(.45); }
@@ -92,7 +95,7 @@ body.legacy button { font: inherit; color: var(--ink); }
 
 /* ---------- Throbber: a little globe; a star orbits it while pages load ---------- */
 .l-throbber {
-  width: 46px; height: 46px; flex: none;
+  width: 50px; height: 50px; flex: none;
   box-shadow: var(--sunken);
   background: #000020;
   position: relative; overflow: hidden;
@@ -128,10 +131,10 @@ body.legacy button { font: inherit; color: var(--ink); }
 }
 .l-location label { font-weight: bold; }
 .l-location input {
-  flex: 1; min-width: 0; height: 22px; padding: 0 5px;
+  flex: 1; min-width: 0; height: 24px; padding: 0 5px;
   border: 0; outline: 0; background: #fff; color: var(--ink);
   box-shadow: var(--sunken);
-  font: 12px Geneva, Tahoma, Verdana, sans-serif;
+  font: 13px var(--ui-font);
   user-select: text;
 }
 .l-location input:focus { outline: 1px dotted var(--ink); outline-offset: -4px; }
@@ -145,7 +148,7 @@ body.legacy button { font: inherit; color: var(--ink); }
   box-shadow: var(--groove);
 }
 .l-chip {
-  height: 20px; padding: 0 8px;
+  height: 22px; padding: 0 8px;
   border: 0; background: var(--face);
   display: inline-flex; align-items: center; gap: 4px;
 }
@@ -169,7 +172,7 @@ body.legacy .sidebar {
 }
 body.legacy .section-label {
   margin: 0; padding: 3px 4px 3px 6px;
-  font-size: 11px; font-weight: bold; letter-spacing: 0; text-transform: none;
+  font-size: 12px; font-weight: bold; letter-spacing: 0; text-transform: none;
   color: var(--ink);
   background: var(--face);
 }
@@ -183,7 +186,7 @@ body.legacy .tabs {
   gap: 0;
 }
 body.legacy .tab {
-  height: 20px; padding: 0 2px 0 3px; gap: 5px;
+  height: 22px; padding: 0 2px 0 3px; gap: 5px;
   border-radius: 0; color: var(--ink);
 }
 body.legacy .tab:hover { background: transparent; }
@@ -195,7 +198,7 @@ body.legacy .tab-close { width: 14px; height: 14px; border-radius: 0; color: inh
 body.legacy .tab-close:hover { background: var(--face); color: var(--ink); box-shadow: var(--raised); }
 body.legacy .tab-close svg { width: 9px; height: 9px; stroke-width: 2.2; }
 body.legacy .avatar {
-  width: 14px; height: 16px; border-radius: 0; font-size: 9px; font-weight: bold;
+  width: 14px; height: 16px; border-radius: 0; font-size: 10px; font-weight: bold;
   color: var(--ink); background: linear-gradient(135deg, #fff 0 70%, #c8c8c8 70%);
   box-shadow: inset 0 0 0 1px var(--shadow);
 }
@@ -230,8 +233,8 @@ body.legacy .card::before {
   color: #fff; font-weight: bold;
 }
 body.legacy .card-title { font-weight: bold; }
-body.legacy .card-sub { color: var(--ink); font-size: 11px; }
-body.legacy .card-user { font: 11px Monaco, "Courier New", monospace; background: #fff; box-shadow: var(--sunken); padding: 3px 5px; }
+body.legacy .card-sub { color: var(--ink); font-size: 12px; }
+body.legacy .card-user { font: 12px Monaco, "Courier New", monospace; background: #fff; box-shadow: var(--sunken); padding: 3px 5px; }
 body.legacy .fill-choice { border: 0; border-radius: 0; background: var(--face); box-shadow: var(--raised); padding: 4px 8px; }
 body.legacy .fill-choice:active { box-shadow: var(--pressed); }
 
@@ -246,7 +249,7 @@ body.legacy .btn {
 body.legacy .btn:active { box-shadow: var(--pressed); }
 body.legacy .btn.primary { box-shadow: 0 0 0 1px var(--dark), var(--raised); background: var(--face); color: var(--ink); }
 body.legacy .btn.primary:disabled { color: var(--shadow); text-shadow: 1px 1px var(--hilite); }
-body.legacy .btn.small { height: 20px; min-width: 0; font-size: 11px; }
+body.legacy .btn.small { height: 22px; min-width: 0; font-size: 12px; }
 body.legacy .btn.danger:hover { color: #a00000; }
 body.legacy .btn svg { stroke: var(--ink); }
 
@@ -256,7 +259,7 @@ body.legacy .page-frame { border-radius: 0; background: #fff; box-shadow: var(--
 
 /* ---------- Status bar ---------- */
 #legacy-status {
-  height: 22px; gap: 2px; padding: 0 3px 3px;
+  height: 24px; gap: 2px; padding: 0 3px 3px;
   align-items: stretch;
 }
 .l-cell {
@@ -299,8 +302,8 @@ body.legacy .vault-page {
   color: #fff; font-weight: bold;
 }
 body.legacy .vault-inner { padding: 14px 16px; max-width: none; }
-body.legacy .vault-header h1 { font: bold 16px Geneva, Tahoma, Verdana, sans-serif; }
-body.legacy .muted { color: var(--ink); }
+body.legacy .vault-header h1 { font: bold 16px var(--ui-font); }
+body.legacy .muted, body.legacy .vault-header .muted { color: var(--ink); font-size: 12px; }
 body.legacy .vault-header { margin-bottom: 14px; }
 body.legacy .panel {
   background: var(--face); border: 0; border-radius: 0;
@@ -310,19 +313,19 @@ body.legacy .panel {
 }
 body.legacy .panel h2 {
   position: absolute; top: -7px; left: 8px; margin: 0; padding: 0 4px;
-  background: var(--face); font: 11px Geneva, Tahoma, Verdana, sans-serif;
+  background: var(--face); font: 12px var(--ui-font);
 }
 body.legacy .panel-head input, body.legacy .add-form input, body.legacy .gen-output {
   height: 22px; border: 0; border-radius: 0; background: #fff; color: var(--ink);
-  box-shadow: var(--sunken); font: 11px Geneva, Tahoma, Verdana, sans-serif; padding: 0 5px;
+  box-shadow: var(--sunken); font: 12px var(--ui-font); padding: 0 5px;
 }
 body.legacy .gen-output { height: auto; padding: 5px; font-family: Monaco, "Courier New", monospace; color: var(--navy); }
 body.legacy .vault-list { background: #fff; box-shadow: var(--sunken); padding: 2px; min-height: 120px; }
 body.legacy .vault-row { border-top: 1px dotted var(--shadow); padding: 6px; }
 body.legacy .vault-row .avatar { width: 16px; height: 18px; font-size: 10px; }
 body.legacy .vault-site { font-weight: bold; }
-body.legacy .vault-user { color: var(--ink); font-size: 11px; }
-body.legacy .vault-locked { color: var(--ink); padding: 50px 0; }
+body.legacy .vault-user { color: var(--ink); font-size: 12px; }
+body.legacy .vault-locked { color: var(--ink); padding: 50px 0; font-size: 12px; }
 body.legacy .big-key { border-radius: 0; background: var(--face); box-shadow: var(--raised); border: 0; color: #b88a00; }
 body.legacy .slider, body.legacy .check { color: var(--ink); }
 body.legacy .slider input, body.legacy .check input { accent-color: var(--navy); }
@@ -332,5 +335,5 @@ body.legacy .error { color: #a00000; }
 body.legacy .toast {
   left: 8px; bottom: 30px; border-radius: 0;
   background: #ffffe1; color: var(--ink); border: 1px solid var(--dark);
-  box-shadow: 2px 2px 0 #0004; font-size: 11px;
+  box-shadow: 2px 2px 0 #0004; font-size: 12px;
 }

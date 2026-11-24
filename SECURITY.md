@@ -1,6 +1,6 @@
 # Security policy
 
-Webscape Obfuscator handles passwords and promises not to keep your browsing data, so security reports are our top priority.
+Webscape Wanderer handles passwords and promises not to keep your browsing data, so security reports are our top priority.
 
 ## Reporting a vulnerability
 

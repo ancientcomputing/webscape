@@ -1,19 +1,20 @@
 {
-  "name": "webscape-obfuscator",
-  "productName": "Webscape Obfuscator",
+  "name": "webscape-wanderer",
+  "productName": "Webscape Wanderer",
   "version": "0.1.0",
   "description": "A private-by-default Chromium browser: every tab has its own memory, nothing touches disk, vertical tabs, built-in password vault.",
   "main": "dist/main/main.js",
   "license": "Apache-2.0",
   "scripts": {
     "build": "tsc -p tsconfig.json && tsc -p tsconfig.ui.json && node scripts/copy-static.mjs",
-    "start": "npm run build && electron .",
+    "start": "node scripts/dev-app-name.mjs && npm run build && electron .",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.ui.json --noEmit",
-    "dist": "npm run build && electron-builder"
+    "dist": "npm run build && electron-builder",
+    "icon": "npx electron scripts/render-icon.cjs"
   },
   "build": {
-    "appId": "org.webscape.obfuscator",
-    "productName": "Webscape Obfuscator",
+    "appId": "org.webscape.wanderer",
+    "productName": "Webscape Wanderer",
     "files": [
       "dist/**",
       "package.json"
