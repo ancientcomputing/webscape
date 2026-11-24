@@ -1,4 +1,8 @@
-# Webscape Wanderer
+<p align="center">
+  <img src="build/icon.png" width="128" height="128" alt="Webscape Wanderer app icon: a blue globe with a gold orbit ring and a shooting star on a navy background">
+</p>
+
+<h1 align="center">Webscape Wanderer</h1>
 
 A private-by-default web browser built on Chromium. Every tab has its own memory, nothing about your browsing is written to disk, tabs are vertical, and passwords are built in. There are no extensions.
 
