@@ -18,7 +18,9 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: lts/*
+          # Match the Node/npm the project is developed with, so `npm ci` reads
+          # the lockfile the same way. Bump this together with your local Node.
+          node-version: 24
           cache: npm
 
       - name: Install
