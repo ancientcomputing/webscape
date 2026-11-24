@@ -4,6 +4,8 @@
 
 <h1 align="center">Webscape Wanderer</h1>
 
+<p align="center"><a href="https://github.com/ancientcomputing/webscape/actions/workflows/ci.yml"><img src="https://github.com/ancientcomputing/webscape/actions/workflows/ci.yml/badge.svg" alt="CI status"></a></p>
+
 A private-by-default web browser built on Chromium. Every tab has its own memory, nothing about your browsing is written to disk, tabs are vertical, and passwords are built in. There are no extensions.
 
 > Status: early prototype (v0.1). It works as a daily browser for basic use, but it hasn't had a security audit. See [Limitations](#limitations).
@@ -140,13 +142,28 @@ The folder is `~/Library/Application Support/Webscape Wanderer` on macOS, `%APPD
 
 ## Limitations
 
-- **Engine updates:** the browser uses Electron's bundled Chromium, which is usually a few weeks behind Chrome's security patches. Keep `electron` up to date.
+- **Engine updates:** the browser uses Electron's bundled Chromium, which usually trails Chrome's security fixes by a few days to a few weeks. Dependabot checks for a new Electron every day and opens a pull request, and CI builds and smoke-tests it (see [Keeping the engine current](#keeping-the-engine-current)). Merge those pull requests promptly.
 - **No extensions:** this is a design choice, and it won't change.
 - **No sync:** passwords stay on this machine.
 - **No Touch ID fallback:** on Macs without Touch ID, and on Windows and Linux, the vault is protected only by your OS login keychain. There is no extra prompt.
 - **Fingerprinting:** tab isolation stops cookie and storage tracking. It doesn't stop browser fingerprinting.
 - **Two-step logins:** sign-ins where the username and password are on separate pages may save without the username.
 - **Unsigned builds:** builds aren't code-signed yet, so macOS asks you to approve them on first launch.
+
+## Keeping the engine current
+
+The browser engine is the `electron` package, which bundles Chromium. Electron releases a new major version about every 8 weeks and supports only the newest three, so an app that isn't updated stops getting security fixes within about six months.
+
+- **Dependabot** ([.github/dependabot.yml](.github/dependabot.yml)) checks npm daily. Electron updates get their own pull request.
+- **CI** ([.github/workflows/ci.yml](.github/workflows/ci.yml)) type-checks, builds and **smoke-tests** every pull request on macOS. The smoke test launches the real browser and checks that the UI loads, that each tab gets its own in-memory session, and that the user agent doesn't reveal Electron.
+- **Patch and minor updates** are mostly security fixes. Merge them as soon as CI is green.
+- **Major updates** can change Electron's APIs. Merge them after CI passes and a quick manual check with `npm start`.
+
+Run the smoke test locally with:
+
+```bash
+npm run build && WEBSCAPE_SMOKE_TEST=1 npx electron .
+```
 
 ## Contributing
 

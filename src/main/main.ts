@@ -1,5 +1,6 @@
 import { app, BaseWindow, clipboard, ipcMain, IpcMainEvent, IpcMainInvokeEvent, Menu, nativeTheme, WebContentsView } from 'electron';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import type { AppState, NavAction, SavePrompt, ThemeSetting, UICommand, VaultEntrySummary } from '../shared/types';
 import { cleanUserAgent, initBlocker } from './privacy';
@@ -7,6 +8,11 @@ import { resolveInput, startPageUrl, TabManager } from './tabs';
 import { fillableOrigin, Vault } from './vault';
 
 app.setName('Webscape Wanderer');
+const SMOKE_TEST = process.env.WEBSCAPE_SMOKE_TEST === '1';
+if (SMOKE_TEST) {
+  // Run isolated: a throwaway data folder, and no clash with a browser you have open.
+  app.setPath('userData', fs.mkdtempSync(path.join(os.tmpdir(), 'webscape-smoke-')));
+}
 const ICON = path.join(__dirname, '../../build/icon.png');
 app.userAgentFallback = cleanUserAgent(app.userAgentFallback);
 
@@ -200,9 +206,53 @@ function createWindow(): void {
   createPopover();
 
   ui.webContents.once('did-finish-load', () => {
-    tabs!.create();
+    const first = tabs!.create();
     sendCommand('focus-address');
+    if (SMOKE_TEST) runSmokeTest(first.view.webContents);
   });
+}
+
+// ---------------------------------------------------------------------------
+// Smoke test (CI): WEBSCAPE_SMOKE_TEST=1 launches the browser, checks the
+// essentials, prints the result and quits with exit code 0 or 1. CI runs it on
+// every pull request, including automated Electron (Chromium) upgrades.
+// ---------------------------------------------------------------------------
+
+function smokeFail(reason: unknown): void {
+  console.error('SMOKE TEST FAILED:', reason);
+  app.exit(1);
+}
+
+if (SMOKE_TEST) {
+  process.on('uncaughtException', smokeFail);
+  process.on('unhandledRejection', smokeFail);
+  setTimeout(() => smokeFail('timed out after 60 s'), 60_000).unref();
+}
+
+function runSmokeTest(tab: Electron.WebContents): void {
+  const checks: string[] = [];
+  const check = (ok: boolean, what: string) => {
+    if (!ok) throw new Error(what);
+    checks.push(what);
+  };
+  const run = () => {
+    try {
+      check(!!ui && !ui.webContents.isCrashed(), 'sidebar UI loaded');
+      check(!!popover && !popover.webContents.isLoading(), 'address box loaded');
+      check(tab.getURL().includes('newtab.html'), 'first tab shows the start page');
+      // The core privacy promise: tab storage must never be persisted to disk.
+      check(!tab.session.isPersistent(), 'tab session is in-memory only');
+      check(tab.session !== tabs!.create(undefined, { background: true }).view.webContents.session, 'each tab gets its own session');
+      check(/Chrome\/\d+/.test(tab.getUserAgent()) && !/Electron/.test(tab.getUserAgent()), 'user agent looks like Chrome, not Electron');
+      console.log(`SMOKE TEST PASSED (Electron ${process.versions.electron}, Chromium ${process.versions.chrome})`);
+      for (const c of checks) console.log(`  ✓ ${c}`);
+      app.exit(0);
+    } catch (err) {
+      smokeFail(err);
+    }
+  };
+  if (tab.isLoading()) tab.once('did-finish-load', run);
+  else run();
 }
 
 // ---------------------------------------------------------------------------
@@ -278,6 +328,7 @@ function closePopover(refocusPage: boolean): void {
 
 function handle<T extends unknown[], R>(channel: string, fn: (...args: T) => R | Promise<R>): void {
   ipcMain.handle(channel, (e, ...args) => {
+    if (!win) return undefined; // window already closed (shutting down)
     if (!fromUI(e)) throw new Error('Not allowed');
     return fn(...(args as T));
   });
@@ -514,7 +565,7 @@ function buildMenu(): void {
 // App lifecycle
 // ---------------------------------------------------------------------------
 
-if (!app.requestSingleInstanceLock()) {
+if (!SMOKE_TEST && !app.requestSingleInstanceLock()) {
   app.quit();
 } else {
   app.on('second-instance', () => {
