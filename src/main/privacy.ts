@@ -1,4 +1,4 @@
-import { dialog, Session, BaseWindow } from 'electron';
+import { dialog, Session, BaseWindow, WebContents } from 'electron';
 import { ElectronBlocker } from '@ghostery/adblocker-electron';
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -48,6 +48,56 @@ export function forgetBlockedCount(webContentsId: number): void {
 export function cleanUserAgent(ua: string): string {
   // Electron also appends "<app name>/<version>"; drop any token for this app.
   return ua.replace(/ Electron\/\S+/, '').replace(/ webscape[\w -]*\/[\d.]+/gi, '');
+}
+
+/**
+ * Google's sign-in refuses a Chromium that claims to be Chrome (or Firefox) but
+ * isn't: "This browser or app may not be secure". It does let Electron in when
+ * Electron says what it is. So on Google's sign-in host only, tabs send
+ * Electron's own, unedited user agent; every other site sees the cleaned one.
+ */
+const SIGN_IN_HOSTS = new Set(['accounts.google.com']);
+let electronUserAgent = '';
+
+export function isSignInHost(url: string): boolean {
+  try {
+    return SIGN_IN_HOSTS.has(new URL(url).hostname);
+  } catch {
+    return false;
+  }
+}
+
+/** Remember Electron's own user agent, before cleanUserAgent edits it. */
+export function setSignInUserAgent(ua: string): void {
+  electronUserAgent = ua;
+}
+
+export function signInUserAgent(): string {
+  return electronUserAgent;
+}
+
+/**
+ * Make a tab's scripts see the same identity its requests carry: Electron's own
+ * while it shows a Google sign-in page, the normal one everywhere else.
+ */
+export function matchSignInIdentity(wc: WebContents): void {
+  const normal = wc.getUserAgent();
+  const wanted = (url: string) => (isSignInHost(url) && signInUserAgent() ? signInUserAgent() : normal);
+  // Changing it mid-redirect aborts the navigation (and can crash Electron), so
+  // it is only changed as a navigation starts...
+  wc.on('did-start-navigation', (d) => {
+    if (!d.isMainFrame || d.isSameDocument) return;
+    const ua = wanted(d.url);
+    if (wc.getUserAgent() !== ua) wc.setUserAgent(ua);
+  });
+  // ...and a page reached by redirect (gmail.com → sign-in) is loaded again
+  // once it arrives, so its scripts see the same identity.
+  wc.on('did-navigate', (_e, url) => {
+    const ua = wanted(url);
+    if (wc.getUserAgent() === ua) return;
+    wc.setUserAgent(ua);
+    if (isSignInHost(url)) wc.reload();
+  });
 }
 
 /**
@@ -111,6 +161,13 @@ export function setupSession(ses: Session, getWindow: () => BaseWindow | null, o
     const headers = details.requestHeaders;
     headers['Sec-GPC'] = '1';
     headers['DNT'] = '1';
+    if (isSignInHost(details.url)) {
+      headers['User-Agent'] = signInUserAgent();
+    } else if (headers['User-Agent']?.includes(' Electron/')) {
+      // Leaving a sign-in page: the tab's identity switches back a moment after
+      // the first request goes out, so restore it here too.
+      headers['User-Agent'] = ses.getUserAgent();
+    }
     callback({ requestHeaders: headers });
   });
 

@@ -91,7 +91,7 @@ Legacy mode is an original homage to that era and uses no third-party logos or a
 
 - Sends `Sec-GPC: 1` (Global Privacy Control) and `DNT: 1` on every request.
 - Turns off the WebRTC local-IP leak (`disable_non_proxied_udp`).
-- Removes the `Electron/x` token from the user agent, so sites see standard Chrome.
+- Removes the `Electron/x` token from the user agent, so sites see standard Chrome. The one exception is Google's sign-in page (`accounts.google.com`), which refuses Chromium browsers that claim to be Chrome; there Webscape sends Electron's own user agent, which Google accepts.
 - Turns off the spell checker, which would download dictionaries from Google.
 - Asks before granting camera, microphone, location or screen sharing. A grant lasts only as long as the tab. Notifications and other permissions are denied.
 - Shows letter avatars instead of favicons, so the browser UI never makes requests outside a tab's memory.

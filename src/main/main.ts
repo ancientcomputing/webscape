@@ -6,7 +6,7 @@ import type { SearchView, AppState, Bookmark, BookmarkData, NavAction, SavePromp
 import { BookmarkStore, cleanUrl, FAVORITES } from './bookmarks';
 import { AIHelper } from './ai';
 import { Insights, searchQuery } from './insights';
-import { cleanUserAgent, initBlocker } from './privacy';
+import { cleanUserAgent, initBlocker, setSignInUserAgent } from './privacy';
 import { resolveInput, startPageUrl, TabManager } from './tabs';
 import { fillableOrigin, Vault } from './vault';
 
@@ -17,6 +17,7 @@ if (SMOKE_TEST) {
   app.setPath('userData', fs.mkdtempSync(path.join(os.tmpdir(), 'webscape-smoke-')));
 }
 const ICON = path.join(__dirname, '../../build/icon.png');
+setSignInUserAgent(app.userAgentFallback);
 app.userAgentFallback = cleanUserAgent(app.userAgentFallback);
 
 /**

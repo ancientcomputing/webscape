@@ -3,7 +3,7 @@ import crypto from 'node:crypto';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import type { TabState } from '../shared/types';
-import { blockedCount, forgetBlockedCount, setupSession } from './privacy';
+import { blockedCount, forgetBlockedCount, matchSignInIdentity, setupSession } from './privacy';
 
 export const START_PAGE = pathToFileURL(path.join(__dirname, '../ui/newtab.html')).href;
 
@@ -118,6 +118,7 @@ export class TabManager {
   private wire(tab: Tab): void {
     const wc = tab.view.webContents;
     wc.setWebRTCIPHandlingPolicy('disable_non_proxied_udp');
+    matchSignInIdentity(wc);
 
     wc.on('page-title-updated', (_e, title) => {
       tab.title = title;
