@@ -1,7 +1,7 @@
 {
   "name": "webscape-wanderer",
   "productName": "Webscape Wanderer",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "A private-by-default Chromium browser: every tab has its own memory, nothing touches disk, vertical tabs, built-in password vault.",
   "main": "dist/main/main.js",
   "license": "Apache-2.0",
