@@ -208,7 +208,7 @@ function createWindow(): void {
   ui.webContents.once('did-finish-load', () => {
     const first = tabs!.create();
     sendCommand('focus-address');
-    if (SMOKE_TEST) runSmokeTest(first.view.webContents);
+    if (SMOKE_TEST) void runSmokeTest(first.view.webContents);
   });
 }
 
@@ -229,30 +229,36 @@ if (SMOKE_TEST) {
   setTimeout(() => smokeFail('timed out after 60 s'), 60_000).unref();
 }
 
-function runSmokeTest(tab: Electron.WebContents): void {
+/** Resolves once a view has a page and has stopped loading. Polls, so it can't miss an event. */
+function loaded(wc: Electron.WebContents): Promise<void> {
+  return new Promise((resolve) => {
+    const poll = () => (wc.getURL() && !wc.isLoading() ? resolve() : setTimeout(poll, 100));
+    poll();
+  });
+}
+
+async function runSmokeTest(tab: Electron.WebContents): Promise<void> {
   const checks: string[] = [];
   const check = (ok: boolean, what: string) => {
     if (!ok) throw new Error(what);
     checks.push(what);
   };
-  const run = () => {
-    try {
-      check(!!ui && !ui.webContents.isCrashed(), 'sidebar UI loaded');
-      check(!!popover && !popover.webContents.isLoading(), 'address box loaded');
-      check(tab.getURL().includes('newtab.html'), 'first tab shows the start page');
-      // The core privacy promise: tab storage must never be persisted to disk.
-      check(!tab.session.isPersistent(), 'tab session is in-memory only');
-      check(tab.session !== tabs!.create(undefined, { background: true }).view.webContents.session, 'each tab gets its own session');
-      check(/Chrome\/\d+/.test(tab.getUserAgent()) && !/Electron/.test(tab.getUserAgent()), 'user agent looks like Chrome, not Electron');
-      console.log(`SMOKE TEST PASSED (Electron ${process.versions.electron}, Chromium ${process.versions.chrome})`);
-      for (const c of checks) console.log(`  ✓ ${c}`);
-      app.exit(0);
-    } catch (err) {
-      smokeFail(err);
-    }
-  };
-  if (tab.isLoading()) tab.once('did-finish-load', run);
-  else run();
+  try {
+    // Wait for every view: on slow machines they finish in any order.
+    await Promise.all([loaded(ui!.webContents), loaded(popover!.webContents), loaded(tab)]);
+    check(!ui!.webContents.isCrashed(), 'sidebar UI loaded');
+    check(!popover!.webContents.isCrashed() && popover!.webContents.getURL().endsWith('address.html'), 'address box loaded');
+    check(tab.getURL().includes('newtab.html'), 'first tab shows the start page');
+    // The core privacy promise: tab storage must never be persisted to disk.
+    check(!tab.session.isPersistent(), 'tab session is in-memory only');
+    check(tab.session !== tabs!.create(undefined, { background: true }).view.webContents.session, 'each tab gets its own session');
+    check(/Chrome\/\d+/.test(tab.getUserAgent()) && !/Electron/.test(tab.getUserAgent()), 'user agent looks like Chrome, not Electron');
+    console.log(`SMOKE TEST PASSED (Electron ${process.versions.electron}, Chromium ${process.versions.chrome})`);
+    for (const c of checks) console.log(`  ✓ ${c}`);
+    app.exit(0);
+  } catch (err) {
+    smokeFail(err);
+  }
 }
 
 // ---------------------------------------------------------------------------
