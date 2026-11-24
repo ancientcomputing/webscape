@@ -16,7 +16,8 @@
     "test": "npm run build && electron scripts/vault-test.cjs && electron scripts/bookmarks-test.cjs",
     "build:ai": "node scripts/build-ai.mjs",
     "eval:ranking": "npm run build:ai && node scripts/eval-ranking.mjs",
-    "test:reader": "npm run build && electron scripts/reader-test.cjs"
+    "test:reader": "npm run build && electron scripts/reader-test.cjs",
+    "release:mac": "scripts/release-mac.sh"
   },
   "build": {
     "appId": "org.webscape.wanderer",
@@ -28,7 +29,12 @@
     "mac": {
       "category": "public.app-category.productivity",
       "target": [
-        "dmg"
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64"
+          ]
+        }
       ],
       "extraResources": [
         {
@@ -39,7 +45,12 @@
           "from": "native/webscape-ai/.build/release/LocalLMLabSDKCore.framework",
           "to": "webscape-ai/LocalLMLabSDKCore.framework"
         }
-      ]
+      ],
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false,
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.plist",
+      "minimumSystemVersion": "26.0"
     },
     "linux": {
       "target": [
@@ -53,6 +64,10 @@
     },
     "directories": {
       "output": "release"
+    },
+    "dmg": {
+      "sign": true,
+      "artifactName": "${productName}-${version}-${arch}.${ext}"
     }
   },
   "dependencies": {
