@@ -101,6 +101,10 @@ svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width:
   -webkit-app-region: drag;
 }
 .nav { display: flex; gap: 2px; -webkit-app-region: no-drag; }
+/* In the modern look any empty part of the sidebar moves the window (the top
+   strip alone was too small to find). Everything you can click opts out. */
+body:not(.legacy) .sidebar { -webkit-app-region: drag; }
+.sidebar :is(button, input, textarea, select, a, label, form, li, .card, .shield) { -webkit-app-region: no-drag; }
 .icon {
   width: 28px; height: 28px;
   display: grid; place-items: center;
