@@ -118,6 +118,8 @@
 
     <div class="spacer"></div>
 
+    <section id="analyze-card" class="card analyze-card" hidden></section>
+
     <section id="login-card" class="card" hidden></section>
 
     <footer class="footer modern-only">
@@ -135,6 +137,9 @@
 
   <!-- ===== Where the web page sits. The main process places the page view over #page-frame. ===== -->
   <div id="page-slot" class="page-slot"><div id="page-frame" class="page-frame"></div></div>
+
+  <!-- On-device AI: search results ranked by how likely they answer the search -->
+  <aside id="insights" class="insights" aria-label="Search results analysis" hidden></aside>
 
   <main id="vault-page" class="vault-page" hidden>
     <div class="l-dialog-title legacy-only">Passwords</div>

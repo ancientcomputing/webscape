@@ -4,6 +4,8 @@ import os from 'node:os';
 import path from 'node:path';
 import type { AppState, Bookmark, BookmarkData, NavAction, SavePrompt, ThemeSetting, UICommand, VaultEntrySummary } from '../shared/types';
 import { BookmarkStore, cleanUrl, FAVORITES } from './bookmarks';
+import { AIHelper } from './ai';
+import { Insights, searchQuery } from './insights';
 import { cleanUserAgent, initBlocker } from './privacy';
 import { resolveInput, startPageUrl, TabManager } from './tabs';
 import { fillableOrigin, Vault } from './vault';
@@ -92,6 +94,8 @@ let popoverMode: 'peek' | 'edit' | null = null;
 let popoverHeight = 64;
 let tabs: TabManager | null = null;
 let vault: Vault | null = null;
+let ai: AIHelper | null = null;
+let insights: Insights | null = null;
 let bookmarks: BookmarkStore | null = null;
 /** The last bookmark removed with the star, for Undo. */
 let lastRemovedBookmark: Bookmark | null = null;
@@ -120,6 +124,7 @@ function pushState(): void {
 
 function buildState(): AppState {
   const active = tabs?.active;
+  if (tabs && insights) insights.prune(new Set(tabs.tabs.map((t) => t.id)));
   const origin = active ? fillableOrigin(active.url) : null;
   const prompt = active ? pending.get(active.id) : undefined;
   return {
@@ -138,6 +143,8 @@ function buildState(): AppState {
     dark: nativeTheme.shouldUseDarkColors,
     loginForm: active?.hasLoginForm && origin ? { origin } : null,
     savePrompt: prompt ? { tabId: prompt.tabId, origin: prompt.origin, username: prompt.username, update: prompt.update } : null,
+    search: active && searchQuery(active.url) ? { query: searchQuery(active.url)! } : null,
+    insights: active && insights ? insights.state(active.id, active.url) : null,
   };
 }
 
@@ -488,6 +495,19 @@ function registerUIHandlers(): void {
   });
   handle('ui:overlay', (on: boolean) => tabs?.setOverlay(on === true));
 
+  // --- On-device AI: analyze search results --------------------------------
+  handle('ui:analyze', () => {
+    const tab = tabs?.active;
+    if (tab && insights) void insights.start(tab.id, tab.view.webContents);
+  });
+  handle('ui:insightsOpen', (open: unknown) => {
+    const tab = tabs?.active;
+    if (tab) insights?.setOpen(tab.id, open === true);
+  });
+  handle('ui:openResult', (url: unknown) => {
+    if (typeof url === 'string' && /^https?:\/\//i.test(url)) tabs?.create(url);
+  });
+
   // --- Bookmarks ---------------------------------------------------------
   const str = (v: unknown, max = 4096) => (typeof v === 'string' ? v.slice(0, max) : '');
   handle('ui:bookmarks', (): BookmarkData | null => bookmarks!.snapshot());
@@ -741,6 +761,8 @@ if (!SMOKE_TEST && !app.requestSingleInstanceLock()) {
 
   app.whenReady().then(() => {
     loadSettings();
+    ai = new AIHelper();
+    insights = new Insights(ai, pushState);
     nativeTheme.themeSource = settings.theme;
     nativeTheme.on('updated', () => {
       ui?.setBackgroundColor(chromeColor());
@@ -771,4 +793,8 @@ if (!SMOKE_TEST && !app.requestSingleInstanceLock()) {
 
   // Closing the window ends the private session: all tab memory is gone.
   app.on('window-all-closed', () => app.quit());
+  app.on('will-quit', () => {
+    insights?.dispose();
+    ai?.stop();
+  });
 }

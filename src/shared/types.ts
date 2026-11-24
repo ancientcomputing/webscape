@@ -38,6 +38,38 @@ export interface AppState {
   /** The active tab shows a password field and has a fillable origin. */
   loginForm: { origin: string } | null;
   savePrompt: SavePrompt | null;
+  /** The active tab is a search results page that can be analyzed (opt-in). */
+  search: { query: string } | null;
+  /** AI analysis of the active tab's search results, if one was started. */
+  insights: InsightsState | null;
+}
+
+/** One search result, as read and judged by the on-device model. */
+export interface ResultInsight {
+  url: string;
+  host: string;
+  title: string;
+  snippet: string;
+  /** queued → reading (fetching the page) → judging (model) → done, or error. */
+  status: 'queued' | 'reading' | 'judging' | 'done' | 'error';
+  /** 0–100: how likely the page answers the search. */
+  score?: number;
+  answers?: 'yes' | 'partly' | 'no';
+  summary?: string;
+  /** A short quote from the page that best answers the search. */
+  evidence?: string;
+  error?: string;
+}
+
+export interface InsightsState {
+  query: string;
+  /** Panel shown (the analysis keeps its results while the panel is closed). */
+  open: boolean;
+  /** 'unavailable': the on-device model can't run; see detail. */
+  status: 'starting' | 'running' | 'done' | 'unavailable' | 'error';
+  detail: string;
+  model: string;
+  results: ResultInsight[];
 }
 
 export interface Bookmark {

@@ -40,6 +40,18 @@ Bookmarks are treated like passwords: things you deliberately chose to keep, sto
 - **Import and export** use the standard `bookmarks.html` format, whose header is still `NETSCAPE-Bookmark-file-1`. Any browser can read it. A browser's toolbar folder imports into Favorites, and nested folders are flattened (`Parent / Child`). Exported files are not encrypted.
 - **Left out on purpose:** sync (it would need an account and a server), favicons (extra network requests) and "recently" or "most visited" (that's history by another name).
 
+### Find the best answer (on-device AI)
+
+On a DuckDuckGo results page, the sidebar offers **Analyze results**. Click it and Webscape Wanderer reads the top 8 results and ranks them by how likely each one answers your search. Each gets a score (High, Medium or Low), a short summary, and a quote from the page as evidence, so you can judge the score yourself.
+
+- **Opt-in:** nothing happens until you click Analyze.
+- **No extra request to DuckDuckGo:** the result list is read from the page you already loaded.
+- **Private reading:** each result page is fetched once as plain HTML (no JavaScript, images or trackers) in a throwaway, cookie-less, in-memory session that's wiped right after.
+- **On this Mac:** the model is Apple's on-device model, run through the [LocalLM Lab SDK](https://github.com/ancientcomputing/locallm) by a small helper inside the app (`native/webscape-ai`). It talks to the browser over a pipe; nothing listens on a network port and nothing is sent to a cloud service.
+- **Memory only:** results live in the tab, like everything else, and disappear when you search again or close the tab.
+
+Needs a Mac with Apple Intelligence turned on (macOS 26 or later). Scores are the model's estimate, not a guarantee. Pages that only build their content with JavaScript can't be read yet.
+
 ### Light and dark
 
 The modern look follows your system's light or dark setting. To force one, use **View → Appearance** or the sun/moon button at the top of the sidebar. Web pages that support dark mode follow along.
@@ -123,7 +135,8 @@ You need Node.js 20 or newer.
 git clone https://github.com/ancientcomputing/webscape.git
 cd webscape
 npm install
-npm start          # builds the TypeScript and launches the browser
+npm start          # builds the TypeScript and the AI helper, then launches the browser
+npm run build:ai   # builds just the on-device AI helper (Swift; needs Xcode on macOS)
 npm run icon       # re-renders build/icon.png from build/icon.svg
 npm run dist       # packages a .dmg / AppImage / installer into release/ with electron-builder
 ```
@@ -137,11 +150,15 @@ src/
     tabs.ts        TabManager: one WebContentsView + one in-memory partition per tab
     privacy.ts     per-session hardening: blocker, headers, permissions, preload
     vault.ts       encrypted password vault (safeStorage + Touch ID)
+    insights.ts    "Analyze results": reads search results privately, asks the AI helper to judge them
+    ai.ts          starts and talks to the AI helper (JSON lines over stdin/stdout)
   preload/
     ui-preload.ts  narrow, allow-listed bridge for the sidebar
     page-preload.ts  login-form detection and fill, in an isolated world
-  ui/              sidebar (HTML/CSS/TS), legacy.css (90s look), start page, error page
+  ui/              sidebar (HTML/CSS/TS), legacy.css (90s look), start page, error page,
+                   reader.ts (turns fetched HTML into readable text, inertly)
   shared/types.ts  types shared by main and UI
+native/webscape-ai/  on-device AI helper: Swift, LocalLM Lab SDK 3.0.0-GA (binary release)
 build/             app icon (SVG source, PNG, ICNS)
 scripts/           build helpers; dev-app-name.mjs names the dev Electron.app "Webscape Wanderer"
 ```

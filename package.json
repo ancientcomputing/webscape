@@ -7,13 +7,14 @@
   "license": "Apache-2.0",
   "scripts": {
     "build": "tsc -p tsconfig.json && tsc -p tsconfig.ui.json && node scripts/copy-static.mjs",
-    "start": "node scripts/dev-app-name.mjs && npm run build && electron .",
+    "start": "node scripts/dev-app-name.mjs && npm run build && npm run build:ai && electron .",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.ui.json --noEmit",
-    "dist": "npm run build && electron-builder",
+    "dist": "npm run build && npm run build:ai && electron-builder",
     "icon": "npx electron scripts/render-icon.cjs",
     "test:vault": "npm run build && electron scripts/vault-test.cjs",
     "test:bookmarks": "npm run build && electron scripts/bookmarks-test.cjs",
-    "test": "npm run build && electron scripts/vault-test.cjs && electron scripts/bookmarks-test.cjs"
+    "test": "npm run build && electron scripts/vault-test.cjs && electron scripts/bookmarks-test.cjs",
+    "build:ai": "node scripts/build-ai.mjs"
   },
   "build": {
     "appId": "org.webscape.wanderer",
@@ -26,6 +27,16 @@
       "category": "public.app-category.productivity",
       "target": [
         "dmg"
+      ],
+      "extraResources": [
+        {
+          "from": "native/webscape-ai/.build/release/webscape-ai",
+          "to": "webscape-ai/webscape-ai"
+        },
+        {
+          "from": "native/webscape-ai/.build/release/LocalLMLabSDKCore.framework",
+          "to": "webscape-ai/LocalLMLabSDKCore.framework"
+        }
       ]
     },
     "linux": {

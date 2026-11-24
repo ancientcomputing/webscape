@@ -362,3 +362,29 @@ body.legacy .bm-inline-form input, body.legacy .bm-rename, body.legacy .bm-add-f
 body.legacy .bm-add-form { border-top: 1px dotted var(--shadow); }
 body.legacy .bm-settings, body.legacy .bm-settings .check { color: var(--ink); }
 body.legacy .toast-action { color: var(--link); text-decoration: underline; font-weight: normal; }
+
+/* ---------- On-device AI panel, 90s style ---------- */
+body.legacy.insights-open {
+  grid-template-columns: 188px minmax(0, 1fr) 330px;
+  grid-template-areas: "top top top" "side page insights" "status status status";
+}
+body.legacy .insights { margin: 0 3px 3px 0; border: 0; border-radius: 0; background: var(--face); box-shadow: var(--raised); padding: 3px; }
+body.legacy .ins-header { padding: 6px 8px; background: linear-gradient(90deg, var(--navy), var(--navy-2)); color: #fff; }
+body.legacy .ins-kicker { color: #fff; opacity: .85; font-size: 11px; text-transform: none; letter-spacing: 0; }
+body.legacy .ins-query { font: bold 13px var(--ui-font); }
+body.legacy .ins-close { color: #fff; }
+body.legacy .ins-status { color: var(--ink); padding: 6px 8px; border-bottom: 0; }
+body.legacy .ins-list { background: #fff; box-shadow: var(--sunken); margin: 0 2px; padding: 4px; }
+body.legacy .ins-item { border-bottom: 1px dotted var(--shadow); }
+body.legacy .ins-score { border-radius: 0; box-shadow: var(--raised); background: var(--face) !important; color: var(--ink) !important; }
+body.legacy .ins-score.high b { color: #006000; }
+body.legacy .ins-score.medium b { color: #806000; }
+body.legacy .ins-title { color: var(--link); text-decoration: underline; font: bold 12px var(--ui-font); }
+body.legacy .ins-host, body.legacy .ins-pending, body.legacy .ins-error { color: #404040; }
+body.legacy .ins-summary { color: var(--ink); font: 12px var(--ui-font); }
+body.legacy .ins-evidence { color: #202020; border-left-color: var(--navy); font-family: "Times New Roman", Times, serif; font-size: 13px; }
+body.legacy .ins-verdict.yes { color: #006000; }
+body.legacy .ins-verdict.partly { color: #806000; }
+body.legacy .ins-verdict.no { color: #404040; }
+body.legacy .ins-foot { color: #404040; border-top: 0; }
+body.legacy .ins-score.low b, body.legacy .ins-score.none { color: #404040; }

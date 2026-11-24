@@ -1,4 +1,4 @@
-import type { AppState, Bookmark, BookmarkData, NavAction, TabState, UICommand, VaultEntrySummary } from '../shared/types.js';
+import type { ResultInsight, AppState, Bookmark, BookmarkData, NavAction, TabState, UICommand, VaultEntrySummary } from '../shared/types.js';
 
 interface Bridge {
   invoke<T = unknown>(channel: string, ...args: unknown[]): Promise<T>;
@@ -39,7 +39,7 @@ function icon(d: string): SVGSVGElement {
 let state: AppState = {
   tabs: [], activeId: null, vaultUnlocked: false, vaultAvailable: true, legacy: false, theme: 'system', dark: true,
   bookmarks: { available: true, unlocked: false, touchIDRequired: false, activeId: null },
-  loginForm: null, savePrompt: null,
+  loginForm: null, savePrompt: null, search: null, insights: null,
 };
 let vaultOpen = false;
 let fillChoices: { origin: string; entries: VaultEntrySummary[] } | null = null;
@@ -798,6 +798,117 @@ function setBookmarks(data: BookmarkData | null): void {
 api.onBookmarks(setBookmarks);
 void api.invoke<BookmarkData | null>('ui:bookmarks').then(setBookmarks);
 
+
+// ---------------------------------------------------------------------------
+// On-device AI: "Analyze results" card and the results panel
+// ---------------------------------------------------------------------------
+const STATUS_ORDER: Record<ResultInsight['status'], number> = { done: 0, judging: 1, reading: 2, queued: 3, error: 4 };
+
+function scoreLabel(score: number): { label: string; cls: string } {
+  if (score >= 70) return { label: 'High', cls: 'high' };
+  if (score >= 40) return { label: 'Medium', cls: 'medium' };
+  return { label: 'Low', cls: 'low' };
+}
+
+function renderAnalyzeCard(): void {
+  const card = $('analyze-card');
+  const ins = state.insights;
+  if (!state.search || (ins && ins.open)) {
+    card.hidden = true;
+    return;
+  }
+  if (ins) {
+    const show = h('button', { class: 'btn primary wide', text: 'Show analysis' });
+    show.addEventListener('click', () => void api.invoke('ui:insightsOpen', true));
+    card.replaceChildren(h('div', { class: 'card-title', text: 'Results analyzed' }), show);
+  } else {
+    const go = h('button', { class: 'btn primary wide' },
+      icon('M8 1.5l1.6 3.9 3.9 1.6-3.9 1.6L8 12.5 6.4 8.6 2.5 7l3.9-1.6z'),
+      h('span', { text: 'Analyze results' }));
+    go.addEventListener('click', () => void api.invoke('ui:analyze'));
+    card.replaceChildren(
+      h('div', { class: 'card-title', text: 'Find the best answer' }),
+      h('div', { class: 'card-sub', text: 'Reads the top results privately and ranks them with on-device AI. Nothing leaves this Mac.' }),
+      go,
+    );
+  }
+  card.hidden = false;
+}
+
+function resultItem(r: ResultInsight): HTMLElement {
+  const open = h('button', { class: 'ins-title', text: r.title || r.host, title: r.url });
+  open.addEventListener('click', () => void api.invoke('ui:openResult', r.url));
+  const head = h('div', { class: 'ins-head' });
+  if (r.status === 'done' && r.score !== undefined) {
+    const { label, cls } = scoreLabel(r.score);
+    head.append(h('span', { class: `ins-score ${cls}`, title: `${r.score} out of 100` },
+      h('b', { text: String(r.score) }), h('span', { text: label })));
+  } else if (r.status === 'error') {
+    head.append(h('span', { class: 'ins-score none', text: '—' }));
+  } else {
+    head.append(h('span', { class: 'ins-score pending' }, h('span', { class: 'ins-spin' })));
+  }
+  head.append(h('div', { class: 'ins-meta' }, open, h('div', { class: 'ins-host', text: r.host })));
+  const item = h('li', { class: `ins-item ${r.status}` }, head);
+  if (r.status === 'done') {
+    const verdict = r.answers === 'yes' ? 'Answers it' : r.answers === 'partly' ? 'Partly answers it' : 'Doesn’t answer it';
+    item.append(h('div', { class: `ins-verdict ${r.answers ?? 'no'}`, text: verdict }));
+    if (r.summary) item.append(h('p', { class: 'ins-summary', text: r.summary }));
+    if (r.evidence) item.append(h('blockquote', { class: 'ins-evidence', text: r.evidence }));
+  } else if (r.status === 'error') {
+    item.append(h('p', { class: 'ins-error', text: r.error ?? 'Couldn’t read this page.' }));
+  } else {
+    const what = r.status === 'judging' ? 'Judging…' : r.status === 'reading' ? 'Reading the page…' : 'Waiting…';
+    item.append(h('p', { class: 'ins-pending', text: what }));
+  }
+  return item;
+}
+
+let insightsKey = '';
+function renderInsights(): void {
+  renderAnalyzeCard();
+  const panel = $('insights');
+  const ins = state.insights;
+  const open = !!ins?.open;
+  document.body.classList.toggle('insights-open', open);
+  panel.hidden = !open;
+  if (!ins || !open) {
+    insightsKey = '';
+    return;
+  }
+  const key = JSON.stringify(ins);
+  if (key === insightsKey) return;
+  insightsKey = key;
+
+  const close = h('button', { class: 'icon ins-close', title: 'Hide analysis', attrs: { 'aria-label': 'Hide analysis' } },
+    icon('m4.5 4.5 7 7M11.5 4.5l-7 7'));
+  close.addEventListener('click', () => void api.invoke('ui:insightsOpen', false));
+  const sorted = [...ins.results].sort((a, b) =>
+    STATUS_ORDER[a.status] - STATUS_ORDER[b.status] || (b.score ?? -1) - (a.score ?? -1));
+  const done = ins.results.filter((r) => r.status === 'done').length;
+  const busy = ins.status === 'starting' || ins.status === 'running';
+
+  const children: (Node | null)[] = [
+    h('header', { class: 'ins-header' },
+      h('div', {},
+        h('div', { class: 'ins-kicker', text: 'Best answers for' }),
+        h('h2', { class: 'ins-query', text: `“${ins.query}”` })),
+      close),
+    h('div', { class: `ins-status ${ins.status}` },
+      busy ? h('span', { class: 'ins-spin' }) : null,
+      h('span', { text: ins.status === 'running' ? `Judged ${done} of ${ins.results.length} pages` : ins.detail })),
+  ];
+  if (ins.status === 'unavailable' || ins.status === 'error') {
+    const retry = h('button', { class: 'btn', text: 'Try again' });
+    retry.addEventListener('click', () => void api.invoke('ui:analyze'));
+    children.push(h('p', { class: 'ins-empty', text: ins.detail }), retry);
+  } else {
+    children.push(h('ol', { class: 'ins-list' }, ...sorted.map(resultItem)));
+  }
+  children.push(h('footer', { class: 'ins-foot', text: `${ins.model || 'On-device model'} · runs on this Mac · scores are estimates` }));
+  panel.replaceChildren(...children.filter((c): c is Node => c !== null));
+}
+
 // ---------------------------------------------------------------------------
 // Wiring
 // ---------------------------------------------------------------------------
@@ -805,6 +916,7 @@ function render(): void {
   renderChrome();
   renderTabs();
   renderLoginCard();
+  renderInsights();
   requestAnimationFrame(reportLayout); // the page slot moves when the look changes
 }
 

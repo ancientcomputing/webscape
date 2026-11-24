@@ -32,6 +32,19 @@ jobs:
       - name: Build
         run: npm run build
 
+      # The on-device AI helper (Swift + LocalLM Lab SDK 3.0.0-GA binary).
+      - name: Build AI helper
+        run: npm run build:ai
+
+      # The helper must start and answer a status request. CI machines have no
+      # Apple Intelligence, so "available" is expected to be false there.
+      - name: AI helper responds
+        timeout-minutes: 2
+        run: |
+          reply=$(echo '{"id":"1","op":"status"}' | native/webscape-ai/.build/release/webscape-ai)
+          echo "$reply"
+          echo "$reply" | grep -q '"ok":true'
+
       # Launches the real browser, checks the UI loads, tabs get separate
       # in-memory sessions and the user agent hides Electron, then quits.
       - name: Smoke test
