@@ -60,6 +60,8 @@ export interface ResultInsight {
   summary?: string;
   /** A short quote from the page that best answers the search. */
   evidence?: string;
+  /** Short reasons for the score, e.g. ["direct", "detailed", "focused"]. */
+  factors?: string[];
   error?: string;
 }
 

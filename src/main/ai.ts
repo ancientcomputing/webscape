@@ -23,6 +23,8 @@ export interface Verdict {
   answers: 'yes' | 'partly' | 'no';
   summary: string;
   evidence: string;
+  /** Short reasons for the score, e.g. ["direct", "detailed", "focused"]. */
+  factors: string[];
 }
 
 type Reply = { id: string; ok: boolean; error?: string } & Record<string, unknown>;
@@ -114,6 +116,7 @@ export class AIHelper {
       answers,
       summary: String(r.summary ?? ''),
       evidence: String(r.evidence ?? ''),
+      factors: Array.isArray(r.factors) ? r.factors.map(String).slice(0, 4) : [],
     };
   }
 

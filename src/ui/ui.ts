@@ -884,7 +884,10 @@ function resultItem(r: ResultInsight, rank: number): HTMLElement {
     h('div', { class: 'ins-host', text: r.status === 'done' ? `${rank}. ${r.host}` : r.host }), open);
   if (r.status === 'done') {
     const verdict = r.answers === 'yes' ? 'Answers it' : r.answers === 'partly' ? 'Partly answers it' : 'Doesn’t answer it';
-    body.append(h('div', { class: `ins-verdict ${r.answers ?? 'no'}`, text: verdict }));
+    const why = (r.factors ?? []).join(' · ');
+    body.append(h('div', { class: `ins-verdict ${r.answers ?? 'no'}` },
+      h('span', { text: verdict }),
+      why ? h('span', { class: 'ins-factors', text: ` · ${why}` }) : null));
     if (r.summary) body.append(h('p', { class: 'ins-summary', text: r.summary }));
     if (r.evidence) body.append(h('blockquote', { class: 'ins-evidence', text: r.evidence }));
   } else if (r.status === 'error') {

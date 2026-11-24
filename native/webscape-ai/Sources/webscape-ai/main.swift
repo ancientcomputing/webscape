@@ -24,21 +24,147 @@ extension RouteName {
     static let rank: RouteName = "rank"
 }
 
-/// What the model returns for one page. Fields are generated in this order, so the
-/// model reads and quotes the page before it commits to a score.
+/// What the model returns for one page: a short rubric of plain categorical
+/// judgements, which a small on-device model makes far more reliably than a
+/// 0–100 number (asked for a number, it gives every relevant page ~92). The score
+/// is computed from the rubric in code (`Verdict.score`). Fields are generated in
+/// this order, so the model reads and quotes the page before it judges.
 @Generable
 struct PageVerdict {
     @Guide(description: "Two short sentences: what this page says that is relevant to the search query.")
     var summary: String
 
-    @Guide(description: "The single most relevant short quote from the page text, copied exactly. Empty if nothing in the page is relevant.")
+    @Guide(description: "The single most relevant short quote from the page text, copied exactly, word for word. Empty if nothing in the page is relevant.")
     var evidence: String
 
     @Guide(description: "Does this page answer the search query?", .anyOf(["yes", "partly", "no"]))
     var answers: String
 
-    @Guide(description: "How likely it is, from 0 to 100, that this page gives the person the answer they are searching for.", .range(0...100))
-    var score: Int
+    @Guide(description: "Where and how clearly the page gives the answer.",
+           .anyOf(["stated clearly near the start", "stated clearly further down", "has to be pieced together", "not in the page"]))
+    var directness: String
+
+    @Guide(description: "How complete the page's answer is.",
+           .anyOf(["the answer plus useful detail, context or variations", "just the bare answer", "only part of the answer", "no answer"]))
+    var completeness: String
+
+    @Guide(description: "How much of the page is about this question.",
+           .anyOf(["the whole page is about it", "one section is about it", "mentioned in passing", "the page is about something else"]))
+    var focus: String
+}
+
+/// Turns a rubric plus measurements of the page into a 0–100 score.
+/// 65 points from the model's judgement (answers 30, directness 15, completeness 10,
+/// focus 10) and 20 from the page itself (position 8, detail 12), scaled
+/// to 100. (Comparing pages side by side was tried and dropped: with Apple's
+/// on-device model it was order-biased and noisier than this.)
+enum Verdict {
+    static let points: [String: [String: Int]] = [
+        "answers": ["yes": 30, "partly": 15, "no": 0],
+        "directness": ["stated clearly near the start": 15, "stated clearly further down": 11,
+                       "has to be pieced together": 5, "not in the page": 0],
+        "completeness": ["the answer plus useful detail, context or variations": 10, "just the bare answer": 6,
+                         "only part of the answer": 3, "no answer": 0],
+        "focus": ["the whole page is about it": 10, "one section is about it": 6,
+                  "mentioned in passing": 2, "the page is about something else": 0],
+    ]
+
+    /// Short labels for the browser to show next to a score.
+    static let labels: [String: String] = [
+        "stated clearly near the start": "direct", "stated clearly further down": "further down",
+        "has to be pieced together": "pieced together",
+        "the answer plus useful detail, context or variations": "detailed", "just the bare answer": "brief",
+        "only part of the answer": "partial",
+        "the whole page is about it": "focused", "one section is about it": "one section", "mentioned in passing": "in passing",
+    ]
+
+    static func score(_ v: PageVerdict, signals: PageSignals, evidenceFound: Bool) -> Int {
+        var model = (points["answers"]?[v.answers] ?? 0) + (points["directness"]?[v.directness] ?? 0)
+            + (points["completeness"]?[v.completeness] ?? 0) + (points["focus"]?[v.focus] ?? 0)
+        // A quote that isn't in the page means the model is guessing.
+        if !v.evidence.isEmpty && !evidenceFound { model -= 10 }
+        // 65 (model) + 20 (page) points, scaled to 100.
+        var total = (Double(model) + signals.points) * 100 / 85
+        // Keep the verdict and the score consistent.
+        if v.answers == "no" { total = min(total, 25) }
+        if v.answers == "partly" { total = min(total, 69) }
+        return max(0, min(100, Int(total.rounded())))
+    }
+
+    /// Whether a quote really comes from the page: exact (ignoring case, spacing
+    /// and punctuation), or at least 85% of its words appear in the page.
+    static func quoteIsInPage(_ quote: String, page: String) -> Bool {
+        func words(_ s: String) -> [String] {
+            s.lowercased().split { !$0.isLetter && !$0.isNumber }.map(String.init)
+        }
+        let q = words(quote)
+        guard !q.isEmpty else { return false }
+        let p = words(page)
+        if p.joined(separator: " ").contains(q.joined(separator: " ")) { return true }
+        let vocabulary = Set(p)
+        let present = q.filter { vocabulary.contains($0) }.count
+        return Double(present) / Double(q.count) >= 0.85
+    }
+}
+
+/// Measurements taken from the page text itself (no model), for the parts of a
+/// judgement a small model makes loosely.
+struct PageSignals {
+    /// 0 = the answer is at the very start, 1 = at the very end (or missing).
+    var position: Double
+    /// Share of the page's sentences that are about the query's key words.
+    var density: Double
+    /// Sentences about the query's key words (capped).
+    var hits: Int
+
+    /// Up to 20 points: position 8, detail 12. (Density is measured but not scored:
+    /// it rewarded short pages over complete ones in the ranking eval.)
+    var points: Double {
+        8 * (1 - position) + 12 * Double(min(hits, 6)) / 6
+    }
+
+    static let stopwords: Set<String> = [
+        "a", "an", "the", "of", "to", "in", "on", "for", "at", "by", "with", "from", "and", "or", "is", "are", "was",
+        "were", "be", "do", "does", "did", "have", "has", "had", "how", "what", "when", "where", "who", "why", "which",
+        "many", "much", "can", "i", "you", "it", "my", "your", "should", "will", "would", "there", "this", "that",
+    ]
+
+    /// Lower-cased words of a text.
+    static func words(_ s: String) -> [String] {
+        s.lowercased().split { !$0.isLetter && !$0.isNumber }.map(String.init)
+    }
+
+    /// A rough stem so "moons", "boiled" and "australian" match "moon", "boil", "australia".
+    static func stem(_ w: String) -> String {
+        String(w.prefix(max(4, w.count - 2)))
+    }
+
+    static func measure(query: String, text: String, evidence: String, evidenceFound: Bool) -> PageSignals {
+        let keys = Array(Set(words(query).filter { !stopwords.contains($0) }.map(stem)))
+        let sentences = text
+            .split(whereSeparator: { ".!?\n".contains($0) })
+            .map(String.init)
+            .filter { words($0).count >= 3 }
+        guard !keys.isEmpty, !sentences.isEmpty else { return PageSignals(position: 1, density: 0, hits: 0) }
+        // A sentence is "about the query" when it has most of the key words.
+        let needed = max(1, Int((Double(keys.count) * 0.6).rounded(.up)))
+        func about(_ sentence: String) -> Bool {
+            let ws = words(sentence)
+            return keys.filter { k in ws.contains { $0.hasPrefix(k) } }.count >= needed
+        }
+        let flags = sentences.map(about)
+        let hits = flags.filter { $0 }.count
+        // Where the answer is: the quote, if it's in the page and about the query;
+        // else the first sentence about the query. A page with neither has no position.
+        var position = 1.0
+        let lowered = text.lowercased()
+        if evidenceFound, about(evidence), let r = lowered.range(of: evidence.lowercased().prefix(40)) {
+            position = Double(lowered.distance(from: lowered.startIndex, to: r.lowerBound)) / Double(max(lowered.count, 1))
+        } else if let first = flags.firstIndex(of: true) {
+            position = Double(first) / Double(sentences.count)
+        }
+        return PageSignals(position: position, density: Double(hits) / Double(sentences.count), hits: hits)
+    }
 }
 
 struct Request: Decodable {
@@ -134,12 +260,18 @@ final class Helper {
                     options: GenerationOptions(temperature: 0)
                 )
                 let v = response.content
+                let page = String(text.prefix(budget))
+                let found = Verdict.quoteIsInPage(v.evidence, page: page)
+                let signals = PageSignals.measure(query: query, text: page, evidence: v.evidence, evidenceFound: found)
+                let factors = [v.directness, v.completeness, v.focus].compactMap { Verdict.labels[$0] }
                 return [
                     "id": req.id, "ok": true,
-                    "score": min(100, max(0, v.score)),
+                    "score": Verdict.score(v, signals: signals, evidenceFound: found),
                     "answers": v.answers,
                     "summary": v.summary,
-                    "evidence": v.evidence,
+                    // Only show quotes that really come from the page.
+                    "evidence": found ? v.evidence : "",
+                    "factors": factors,
                 ]
             } catch let error as LanguageModelSession.GenerationError {
                 // Too long after all: retry once with half the text.

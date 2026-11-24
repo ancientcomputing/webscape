@@ -56,6 +56,10 @@ How it stays private:
 - **On this Mac:** the model is Apple's on-device model, run through the [LocalLM Lab SDK](https://github.com/ancientcomputing/locallm) by a small helper inside the app (`native/webscape-ai`). It talks to the browser over a pipe; nothing listens on a network port and nothing is sent to a cloud service.
 - **Memory only:** answers live in the tab, like everything else, and disappear when you search again or close the tab.
 
+How a score is made: asked directly for a number, a small on-device model gives nearly every relevant page about 92. So instead it answers a short rubric of plain judgements (does the page answer it; how directly; how completely; how focused the page is), and the score is computed from that in code, together with two measurements of the page itself (how early the answer appears, and how much of the page covers the question). A quote that isn't actually in the page costs points and isn't shown. Each result lists its reasons, for example "Answers it · direct · detailed · focused".
+
+`npm run eval:ranking` scores a hand-graded set of pages ([native/webscape-ai/eval](native/webscape-ai/eval)) and reports how well scores spread and order them. On it, the pages that answer the question went from a spread of 1.9 points and 56% correct order to a spread of 6.6 points and 89% correct order (96% across all pages).
+
 Needs a Mac with Apple Intelligence turned on (macOS 26 or later). Scores are the model's estimate, not a guarantee. Pages that only build their content with JavaScript can't be read yet.
 
 ### Light and dark
