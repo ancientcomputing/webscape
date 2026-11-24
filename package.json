@@ -55,5 +55,9 @@
   "homepage": "https://github.com/ancientcomputing/webscape",
   "bugs": {
     "url": "https://github.com/ancientcomputing/webscape/issues"
+  },
+  "allowScripts": {
+    "electron": true,
+    "electron-winstaller": false
   }
 }
