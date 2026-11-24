@@ -1,4 +1,4 @@
-import type { ResultInsight, AppState, Bookmark, BookmarkData, NavAction, TabState, UICommand, VaultEntrySummary } from '../shared/types.js';
+import type { ResultInsight, SearchView, AppState, Bookmark, BookmarkData, NavAction, TabState, UICommand, VaultEntrySummary } from '../shared/types.js';
 
 interface Bridge {
   invoke<T = unknown>(channel: string, ...args: unknown[]): Promise<T>;
@@ -39,7 +39,7 @@ function icon(d: string): SVGSVGElement {
 let state: AppState = {
   tabs: [], activeId: null, vaultUnlocked: false, vaultAvailable: true, legacy: false, theme: 'system', dark: true,
   bookmarks: { available: true, unlocked: false, touchIDRequired: false, activeId: null },
-  loginForm: null, savePrompt: null, search: null, insights: null,
+  loginForm: null, savePrompt: null, search: null, answersFirst: false, insights: null,
 };
 let vaultOpen = false;
 let fillChoices: { origin: string; entries: VaultEntrySummary[] } | null = null;
@@ -800,7 +800,7 @@ void api.invoke<BookmarkData | null>('ui:bookmarks').then(setBookmarks);
 
 
 // ---------------------------------------------------------------------------
-// On-device AI: "Analyze results" card and the results panel
+// On-device AI: Results / Answers views of a search
 // ---------------------------------------------------------------------------
 const STATUS_ORDER: Record<ResultInsight['status'], number> = { done: 0, judging: 1, reading: 2, queued: 3, error: 4 };
 
@@ -810,103 +810,137 @@ function scoreLabel(score: number): { label: string; cls: string } {
   return { label: 'Low', cls: 'low' };
 }
 
-function renderAnalyzeCard(): void {
-  const card = $('analyze-card');
-  const ins = state.insights;
-  if (!state.search || (ins && ins.open)) {
-    card.hidden = true;
-    return;
-  }
-  if (ins) {
-    const show = h('button', { class: 'btn primary wide', text: 'Show analysis' });
-    show.addEventListener('click', () => void api.invoke('ui:insightsOpen', true));
-    card.replaceChildren(h('div', { class: 'card-title', text: 'Results analyzed' }), show);
-  } else {
-    const go = h('button', { class: 'btn primary wide' },
-      icon('M8 1.5l1.6 3.9 3.9 1.6-3.9 1.6L8 12.5 6.4 8.6 2.5 7l3.9-1.6z'),
-      h('span', { text: 'Analyze results' }));
-    go.addEventListener('click', () => void api.invoke('ui:analyze'));
-    card.replaceChildren(
-      h('div', { class: 'card-title', text: 'Find the best answer' }),
-      h('div', { class: 'card-sub', text: 'Reads the top results privately and ranks them with on-device AI. Nothing leaves this Mac.' }),
-      go,
-    );
-  }
-  card.hidden = false;
+const currentView = (): SearchView => state.insights?.view ?? 'results';
+
+/** A Results | Answers switch. Built once and updated in place, so clicks never land on a replaced button. */
+function makeViewSwitch(): HTMLElement {
+  const make = (view: SearchView, text: string, hint: string) => {
+    const b = h('button', { class: 'seg-btn', text, title: hint, attrs: { 'data-view': view } });
+    b.addEventListener('click', () => {
+      closePages();
+      void api.invoke('ui:searchView', view);
+    });
+    return b;
+  };
+  return h('div', { class: 'seg', attrs: { role: 'group', 'aria-label': 'Search view' } },
+    make('results', 'Results', 'DuckDuckGo’s results page'),
+    make('answers', 'Answers', 'Results ranked by how likely they answer your search (⇧⌘A)'));
 }
 
-function resultItem(r: ResultInsight): HTMLElement {
-  const open = h('button', { class: 'ins-title', text: r.title || r.host, title: r.url });
-  open.addEventListener('click', () => void api.invoke('ui:openResult', r.url));
-  const head = h('div', { class: 'ins-head' });
-  if (r.status === 'done' && r.score !== undefined) {
-    const { label, cls } = scoreLabel(r.score);
-    head.append(h('span', { class: `ins-score ${cls}`, title: `${r.score} out of 100` },
-      h('b', { text: String(r.score) }), h('span', { text: label })));
-  } else if (r.status === 'error') {
-    head.append(h('span', { class: 'ins-score none', text: '—' }));
-  } else {
-    head.append(h('span', { class: 'ins-score pending' }, h('span', { class: 'ins-spin' })));
+function updateViewSwitch(sw: HTMLElement): void {
+  for (const b of Array.from(sw.querySelectorAll<HTMLButtonElement>('.seg-btn'))) {
+    const on = b.dataset.view === currentView();
+    b.classList.toggle('on', on);
+    b.setAttribute('aria-pressed', String(on));
   }
-  head.append(h('div', { class: 'ins-meta' }, open, h('div', { class: 'ins-host', text: r.host })));
-  const item = h('li', { class: `ins-item ${r.status}` }, head);
+}
+
+function insightsSummary(): string {
+  const ins = state.insights;
+  if (!ins) return 'Answers reads the top results privately and ranks them with on-device AI.';
+  if (ins.status === 'unavailable' || ins.status === 'error') return ins.detail;
+  const done = ins.results.filter((r) => r.status === 'done');
+  if (ins.status !== 'done') return `Judged ${done.length} of ${ins.results.length || 8} pages…`;
+  const best = Math.max(...done.map((r) => r.score ?? 0));
+  return done.length ? `${done.length} pages judged · best ${best} (${scoreLabel(best).label})` : ins.detail;
+}
+
+// The sidebar's "This search" card, built once.
+const cardSwitch = makeViewSwitch();
+const cardSummary = h('div', { class: 'card-sub' });
+const answersFirstBox = h('input', { attrs: { type: 'checkbox' } }) as HTMLInputElement;
+answersFirstBox.addEventListener('change', () => void api.invoke('ui:answersFirst', answersFirstBox.checked));
+$('analyze-card').replaceChildren(
+  h('div', { class: 'card-title', text: 'This search' }),
+  cardSwitch,
+  cardSummary,
+  h('label', { class: 'check small', title: 'Every search is analyzed automatically: its top pages are read privately on this Mac.' },
+    answersFirstBox, h('span', { text: 'Open searches on Answers' })),
+);
+
+function renderSearchCard(): void {
+  const card = $('analyze-card');
+  card.hidden = !state.search;
+  if (!state.search) return;
+  updateViewSwitch(cardSwitch);
+  cardSummary.textContent = insightsSummary();
+  answersFirstBox.checked = state.answersFirst;
+}
+
+function resultItem(r: ResultInsight, rank: number): HTMLElement {
+  const open = h('button', { class: 'ins-title', text: r.title || r.host, title: `Open ${r.url} in a new tab` });
+  open.addEventListener('click', () => void api.invoke('ui:openResult', r.url));
+  const badge =
+    r.status === 'done' && r.score !== undefined
+      ? (() => {
+          const { label, cls } = scoreLabel(r.score!);
+          return h('span', { class: `ins-score ${cls}`, title: `${r.score} out of 100` },
+            h('b', { text: String(r.score) }), h('span', { text: label }));
+        })()
+      : r.status === 'error'
+        ? h('span', { class: 'ins-score none', text: '—' })
+        : h('span', { class: 'ins-score pending' }, h('span', { class: 'ins-spin' }));
+  const body = h('div', { class: 'ins-body' },
+    h('div', { class: 'ins-host', text: r.status === 'done' ? `${rank}. ${r.host}` : r.host }), open);
   if (r.status === 'done') {
     const verdict = r.answers === 'yes' ? 'Answers it' : r.answers === 'partly' ? 'Partly answers it' : 'Doesn’t answer it';
-    item.append(h('div', { class: `ins-verdict ${r.answers ?? 'no'}`, text: verdict }));
-    if (r.summary) item.append(h('p', { class: 'ins-summary', text: r.summary }));
-    if (r.evidence) item.append(h('blockquote', { class: 'ins-evidence', text: r.evidence }));
+    body.append(h('div', { class: `ins-verdict ${r.answers ?? 'no'}`, text: verdict }));
+    if (r.summary) body.append(h('p', { class: 'ins-summary', text: r.summary }));
+    if (r.evidence) body.append(h('blockquote', { class: 'ins-evidence', text: r.evidence }));
   } else if (r.status === 'error') {
-    item.append(h('p', { class: 'ins-error', text: r.error ?? 'Couldn’t read this page.' }));
+    body.append(h('p', { class: 'ins-error', text: r.error ?? 'Couldn’t read this page.' }));
   } else {
     const what = r.status === 'judging' ? 'Judging…' : r.status === 'reading' ? 'Reading the page…' : 'Waiting…';
-    item.append(h('p', { class: 'ins-pending', text: what }));
+    body.append(h('p', { class: 'ins-pending', text: what }));
   }
-  return item;
+  return h('li', { class: `ins-item ${r.status}` }, badge, body);
 }
+
+// The Answers page: a fixed frame (heading, switch, status) built once; only the list is rebuilt.
+const pageSwitch = makeViewSwitch();
+const pageQuery = h('h1', { class: 'ins-query' });
+const pageSpin = h('span', { class: 'ins-spin' });
+const pageStatusText = h('span');
+const pageStatus = h('div', { class: 'ins-status' }, pageSpin, pageStatusText);
+const pageBody = h('div');
+const pageFoot = h('footer', { class: 'ins-foot' });
+$('insights').replaceChildren(h('div', { class: 'ins-inner' },
+  h('header', { class: 'ins-header' },
+    h('div', { class: 'ins-heading' }, h('div', { class: 'ins-kicker', text: 'Best answers for' }), pageQuery),
+    pageSwitch),
+  pageStatus, pageBody, pageFoot));
 
 let insightsKey = '';
 function renderInsights(): void {
-  renderAnalyzeCard();
-  const panel = $('insights');
+  renderSearchCard();
+  const page = $('insights');
   const ins = state.insights;
-  const open = !!ins?.open;
-  document.body.classList.toggle('insights-open', open);
-  panel.hidden = !open;
-  if (!ins || !open) {
+  const show = !!state.search && !!ins && ins.view === 'answers' && !vaultOpen && !bookmarksOpen;
+  page.hidden = !show;
+  if (!show || !ins) {
     insightsKey = '';
     return;
   }
-  const key = JSON.stringify(ins);
+  updateViewSwitch(pageSwitch);
+  pageQuery.textContent = ins.query;
+  pageSpin.hidden = !(ins.status === 'starting' || ins.status === 'running');
+  pageStatusText.textContent = insightsSummary();
+  pageFoot.textContent = `${ins.model || 'On-device model'} · runs on this Mac · scores are the model’s estimate · click a title to open it in a new tab`;
+
+  const key = JSON.stringify([ins.status, ins.results]);
   if (key === insightsKey) return;
   insightsKey = key;
-
-  const close = h('button', { class: 'icon ins-close', title: 'Hide analysis', attrs: { 'aria-label': 'Hide analysis' } },
-    icon('m4.5 4.5 7 7M11.5 4.5l-7 7'));
-  close.addEventListener('click', () => void api.invoke('ui:insightsOpen', false));
-  const sorted = [...ins.results].sort((a, b) =>
-    STATUS_ORDER[a.status] - STATUS_ORDER[b.status] || (b.score ?? -1) - (a.score ?? -1));
-  const done = ins.results.filter((r) => r.status === 'done').length;
-  const busy = ins.status === 'starting' || ins.status === 'running';
-
-  const children: (Node | null)[] = [
-    h('header', { class: 'ins-header' },
-      h('div', {},
-        h('div', { class: 'ins-kicker', text: 'Best answers for' }),
-        h('h2', { class: 'ins-query', text: `“${ins.query}”` })),
-      close),
-    h('div', { class: `ins-status ${ins.status}` },
-      busy ? h('span', { class: 'ins-spin' }) : null,
-      h('span', { text: ins.status === 'running' ? `Judged ${done} of ${ins.results.length} pages` : ins.detail })),
-  ];
   if (ins.status === 'unavailable' || ins.status === 'error') {
     const retry = h('button', { class: 'btn', text: 'Try again' });
-    retry.addEventListener('click', () => void api.invoke('ui:analyze'));
-    children.push(h('p', { class: 'ins-empty', text: ins.detail }), retry);
-  } else {
-    children.push(h('ol', { class: 'ins-list' }, ...sorted.map(resultItem)));
+    retry.addEventListener('click', () => void api.invoke('ui:searchView', 'answers'));
+    pageBody.replaceChildren(h('p', { class: 'ins-empty', text: ins.detail }), retry);
+    return;
   }
-  children.push(h('footer', { class: 'ins-foot', text: `${ins.model || 'On-device model'} · runs on this Mac · scores are estimates` }));
-  panel.replaceChildren(...children.filter((c): c is Node => c !== null));
+  const sorted = [...ins.results].sort((a, b) =>
+    STATUS_ORDER[a.status] - STATUS_ORDER[b.status] || (b.score ?? -1) - (a.score ?? -1));
+  let rank = 0;
+  pageBody.replaceChildren(h('ol', { class: 'ins-list' },
+    ...sorted.map((r) => resultItem(r, r.status === 'done' ? ++rank : 0))));
 }
 
 // ---------------------------------------------------------------------------

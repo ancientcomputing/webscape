@@ -40,15 +40,21 @@ Bookmarks are treated like passwords: things you deliberately chose to keep, sto
 - **Import and export** use the standard `bookmarks.html` format, whose header is still `NETSCAPE-Bookmark-file-1`. Any browser can read it. A browser's toolbar folder imports into Favorites, and nested folders are flattened (`Parent / Child`). Exported files are not encrypted.
 - **Left out on purpose:** sync (it would need an account and a server), favicons (extra network requests) and "recently" or "most visited" (that's history by another name).
 
-### Find the best answer (on-device AI)
+### Results or Answers (on-device AI)
 
-On a DuckDuckGo results page, the sidebar offers **Analyze results**. Click it and Webscape Wanderer reads the top 8 results and ranks them by how likely each one answers your search. Each gets a score (High, Medium or Low), a short summary, and a quote from the page as evidence, so you can judge the score yourself.
+Every DuckDuckGo search has two views, and a **Results | Answers** switch (in the sidebar and at the top of Answers, or **⇧⌘A**) flips between them:
 
-- **Opt-in:** nothing happens until you click Analyze.
+- **Results** is DuckDuckGo's own page.
+- **Answers** reads the top 8 results and ranks them by how likely each one answers your search. Each gets a score (High, Medium or Low), a short summary, and a quote from the page as evidence, so you can judge the score yourself. Click a title to open the page in a new tab, with your answers still there.
+
+Searches open on **Results** by default, and nothing is analyzed until you switch to Answers. Tick **Open searches on Answers** (in the sidebar, or **View → Open Searches on Answers**) to land on Answers instead. Then every search is analyzed automatically. If the on-device model isn't available, searches simply open on Results.
+
+How it stays private:
+
 - **No extra request to DuckDuckGo:** the result list is read from the page you already loaded.
 - **Private reading:** each result page is fetched once as plain HTML (no JavaScript, images or trackers) in a throwaway, cookie-less, in-memory session that's wiped right after.
 - **On this Mac:** the model is Apple's on-device model, run through the [LocalLM Lab SDK](https://github.com/ancientcomputing/locallm) by a small helper inside the app (`native/webscape-ai`). It talks to the browser over a pipe; nothing listens on a network port and nothing is sent to a cloud service.
-- **Memory only:** results live in the tab, like everything else, and disappear when you search again or close the tab.
+- **Memory only:** answers live in the tab, like everything else, and disappear when you search again or close the tab.
 
 Needs a Mac with Apple Intelligence turned on (macOS 26 or later). Scores are the model's estimate, not a guarantee. Pages that only build their content with JavaScript can't be read yet.
 
@@ -121,6 +127,7 @@ The vault only saves and fills on `https://` origins, plus `http://localhost` fo
 | ⌘1…⌘9 | Jump to a tab (⌘9 = last) |
 | ⇧⌘P | Open the password vault |
 | ⇧⌘L | Toggle Legacy mode |
+| ⇧⌘A | Switch a search between Results and Answers |
 | ⌘D | Bookmark this page |
 | ⇧⌘B | Show all bookmarks |
 | ⌥⌘I | Developer tools for the current tab |
@@ -170,7 +177,7 @@ scripts/           build helpers; dev-app-name.mjs names the dev Electron.app "W
 | `vault.bin` | Your saved logins, encrypted with the OS keychain |
 | `bookmarks.bin` | Your bookmarks, encrypted with the OS keychain |
 | `blocker-engine.bin` | Compiled tracker filter lists (no personal data) |
-| `settings.json` | UI look (modern or legacy, light or dark), and whether bookmarks need Touch ID |
+| `settings.json` | UI preferences: look (modern or legacy, light or dark), whether bookmarks need Touch ID, whether searches open on Answers |
 | Chromium housekeeping | GPU shader caches and the sidebar UI's own storage. Web pages never use this profile. |
 
 The folder is `~/Library/Application Support/Webscape Wanderer` on macOS, `%APPDATA%` on Windows and `~/.config` on Linux.

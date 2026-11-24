@@ -147,9 +147,12 @@ export class TabManager {
     wc.on('did-navigate', (_e, url) => {
       tab.hasLoginForm = false;
       onNavigate(url);
+      this.onNavigated?.(tab);
     });
     wc.on('did-navigate-in-page', (_e, url, isMainFrame) => {
-      if (isMainFrame) onNavigate(url);
+      if (!isMainFrame) return;
+      onNavigate(url);
+      this.onNavigated?.(tab);
     });
     wc.on('did-fail-load', (_e, code, description, validatedURL, isMainFrame) => {
       // -3 is ERR_ABORTED (a navigation replaced by another one): not an error.
@@ -265,12 +268,20 @@ export class TabManager {
     ses.clearAuthCache().catch(() => {});
   }
 
+  /** Called after a tab's page changes (full navigation or in-page). */
+  onNavigated: ((tab: Tab) => void) | null = null;
+
+  /**
+   * Cover the page area with a UI page (vault, bookmarks, Answers) or show the
+   * active tab. Safe to call repeatedly: focus only moves when it changes.
+   */
   setOverlay(on: boolean): void {
+    const changed = on !== this.overlay;
     this.overlay = on;
     const tab = this.active;
     if (!tab) return;
     tab.view.setVisible(!on);
-    if (!on) tab.view.webContents.focus();
+    if (changed && !on) tab.view.webContents.focus();
   }
 
   /** Switch look: square corners in legacy mode, and restyle tabs sitting on the start page. */

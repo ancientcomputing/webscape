@@ -2,7 +2,7 @@
 import { contextBridge, ipcRenderer } from 'electron';
 
 const INVOKE = new Set([
-  'ui:state', 'ui:newTab', 'ui:select', 'ui:close', 'ui:navigate', 'ui:nav', 'ui:focusPage', 'ui:overlay', 'ui:setLegacy', 'ui:setTheme', 'ui:addressPopover', 'ui:addressPopoverClose', 'ui:addressPopoverHeight', 'ui:analyze', 'ui:insightsOpen', 'ui:openResult', 'ui:home', 'ui:layout',
+  'ui:state', 'ui:newTab', 'ui:select', 'ui:close', 'ui:navigate', 'ui:nav', 'ui:focusPage', 'ui:overlay', 'ui:setLegacy', 'ui:setTheme', 'ui:addressPopover', 'ui:addressPopoverClose', 'ui:addressPopoverHeight', 'ui:searchView', 'ui:answersFirst', 'ui:openResult', 'ui:home', 'ui:layout',
   'ui:vaultUnlock', 'ui:vaultLock', 'ui:vaultList', 'ui:vaultCopy', 'ui:vaultDelete', 'ui:vaultAdd',
   'ui:copySecret', 'ui:fillCandidates', 'ui:fill', 'ui:saveDecision',
   'ui:bookmarks', 'ui:bookmarkToggle', 'ui:bookmarkAdd', 'ui:bookmarkUndo', 'ui:bookmarkOpen', 'ui:bookmarkSave', 'ui:bookmarkDelete',

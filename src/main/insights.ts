@@ -1,7 +1,7 @@
 import { session, WebContents, WebContentsView } from 'electron';
 import crypto from 'node:crypto';
 import path from 'node:path';
-import type { InsightsState, ResultInsight } from '../shared/types';
+import type { InsightsState, ResultInsight, SearchView } from '../shared/types';
 import { AIHelper } from './ai';
 
 /**
@@ -84,14 +84,19 @@ export class Insights {
       this.cancel(tabId);
       return null;
     }
-    const { query, open, status, detail, model, results } = a;
-    return { query, open, status, detail, model, results };
+    const { query, view, status, detail, model, results } = a;
+    return { query, view, status, detail, model, results };
   }
 
-  setOpen(tabId: number, open: boolean): void {
+  /** Which view the tab's search is showing ('results' when nothing was analyzed). */
+  view(tabId: number): SearchView {
+    return this.byTab.get(tabId)?.view ?? 'results';
+  }
+
+  setView(tabId: number, view: SearchView): void {
     const a = this.byTab.get(tabId);
-    if (a) {
-      a.open = open;
+    if (a && a.view !== view) {
+      a.view = view;
       this.changed();
     }
   }
@@ -107,17 +112,22 @@ export class Insights {
     this.byTab.delete(tabId);
   }
 
-  async start(tabId: number, wc: WebContents): Promise<void> {
+  /**
+   * Analyze the tab's search and show it in `view`. `auto` is true when started by
+   * the "show answers first" preference rather than a click: then, if the model
+   * can't run, the tab quietly stays on the results page.
+   */
+  async start(tabId: number, wc: WebContents, view: SearchView = 'answers', auto = false): Promise<void> {
     const query = searchQuery(wc.getURL());
     if (!query) return;
     const existing = this.byTab.get(tabId);
     if (existing && existing.query === query && existing.status !== 'error' && existing.status !== 'unavailable') {
-      this.setOpen(tabId, true);
+      if (!auto) this.setView(tabId, view);
       return;
     }
     this.cancel(tabId);
     const a: Analysis = {
-      tabId, query, open: true, status: 'starting', detail: 'Checking the on-device model…',
+      tabId, query, view, status: 'starting', detail: 'Checking the on-device model…',
       model: '', results: [], cancelled: false,
     };
     this.byTab.set(tabId, a);
@@ -129,6 +139,7 @@ export class Insights {
     if (!model.available) {
       a.status = 'unavailable';
       a.detail = model.detail;
+      if (auto) a.view = 'results';
       this.changed();
       return;
     }

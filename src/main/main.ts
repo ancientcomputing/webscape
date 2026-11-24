@@ -2,7 +2,7 @@ import { app, BaseWindow, clipboard, dialog, ipcMain, IpcMainEvent, IpcMainInvok
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import type { AppState, Bookmark, BookmarkData, NavAction, SavePrompt, ThemeSetting, UICommand, VaultEntrySummary } from '../shared/types';
+import type { SearchView, AppState, Bookmark, BookmarkData, NavAction, SavePrompt, ThemeSetting, UICommand, VaultEntrySummary } from '../shared/types';
 import { BookmarkStore, cleanUrl, FAVORITES } from './bookmarks';
 import { AIHelper } from './ai';
 import { Insights, searchQuery } from './insights';
@@ -34,8 +34,10 @@ interface Settings {
   theme: ThemeSetting;
   /** Keep bookmarks locked until Touch ID. */
   bookmarksTouchID: boolean;
+  /** Open searches on the Answers view; every search is then analyzed automatically. */
+  answersFirst: boolean;
 }
-let settings: Settings = { legacy: false, theme: 'system', bookmarksTouchID: false };
+let settings: Settings = { legacy: false, theme: 'system', bookmarksTouchID: false, answersFirst: false };
 const settingsFile = () => path.join(app.getPath('userData'), 'settings.json');
 
 function loadSettings(): void {
@@ -45,6 +47,7 @@ function loadSettings(): void {
       legacy: raw.legacy === true,
       theme: raw.theme === 'light' || raw.theme === 'dark' ? raw.theme : 'system',
       bookmarksTouchID: raw.bookmarksTouchID === true,
+      answersFirst: raw.answersFirst === true,
     };
   } catch {
     /* first run */
@@ -115,11 +118,43 @@ function pushState(): void {
     stateQueued = false;
     if (!ui || ui.webContents.isDestroyed()) return;
     const st = buildState();
+    applyOverlay();
     ui.webContents.send('state', st);
     if (popover && !popover.webContents.isDestroyed()) popover.webContents.send('state', st);
     const active = tabs?.active;
     if (win && !win.isDestroyed()) win.setTitle(active ? `${active.title} — Webscape Wanderer` : 'Webscape Wanderer');
   });
+}
+
+/** A UI page (vault, bookmarks) is covering the page area. */
+let uiOverlay = false;
+
+/** Answers is the active tab's view: the ranked list covers the page area. */
+function showingAnswers(): boolean {
+  const tab = tabs?.active;
+  return !!tab && !!insights && insights.state(tab.id, tab.url) !== null && insights.view(tab.id) === 'answers';
+}
+
+function applyOverlay(): void {
+  tabs?.setOverlay(uiOverlay || showingAnswers());
+}
+
+/** Switch the active tab's search between DuckDuckGo's page and the ranked answers. */
+function setSearchView(view: SearchView): void {
+  const tab = tabs?.active;
+  if (!tab || !insights || !searchQuery(tab.url)) return;
+  if (view === 'answers') void insights.start(tab.id, tab.view.webContents, 'answers');
+  else insights.setView(tab.id, 'results');
+  pushState();
+}
+
+function setAnswersFirst(on: boolean): void {
+  settings.answersFirst = on;
+  saveSettings();
+  buildMenu();
+  // Turning it on while looking at a search shows that search's answers too.
+  if (on) setSearchView('answers');
+  pushState();
 }
 
 function buildState(): AppState {
@@ -144,6 +179,7 @@ function buildState(): AppState {
     loginForm: active?.hasLoginForm && origin ? { origin } : null,
     savePrompt: prompt ? { tabId: prompt.tabId, origin: prompt.origin, username: prompt.username, update: prompt.update } : null,
     search: active && searchQuery(active.url) ? { query: searchQuery(active.url)! } : null,
+    answersFirst: settings.answersFirst,
     insights: active && insights ? insights.state(active.id, active.url) : null,
   };
 }
@@ -279,6 +315,12 @@ function createWindow(): void {
 
   tabs = new TabManager(win, contentBounds, pushState, () => sendCommand('focus-address'));
   tabs.legacy = settings.legacy;
+  // "Show answers first": analyze each search as it loads.
+  tabs.onNavigated = (tab) => {
+    if (settings.answersFirst && insights && searchQuery(tab.url)) {
+      void insights.start(tab.id, tab.view.webContents, 'answers', true);
+    }
+  };
   layout();
   win.on('resize', () => {
     layout();
@@ -493,17 +535,14 @@ function registerUIHandlers(): void {
     insets = { left: Math.round(n.left as number), top: Math.round(n.top as number), right: Math.round(n.right as number), bottom: Math.round(n.bottom as number) };
     tabs?.layout();
   });
-  handle('ui:overlay', (on: boolean) => tabs?.setOverlay(on === true));
+  handle('ui:overlay', (on: boolean) => {
+    uiOverlay = on === true;
+    applyOverlay();
+  });
 
   // --- On-device AI: analyze search results --------------------------------
-  handle('ui:analyze', () => {
-    const tab = tabs?.active;
-    if (tab && insights) void insights.start(tab.id, tab.view.webContents);
-  });
-  handle('ui:insightsOpen', (open: unknown) => {
-    const tab = tabs?.active;
-    if (tab) insights?.setOpen(tab.id, open === true);
-  });
+  handle('ui:searchView', (view: unknown) => setSearchView(view === 'answers' ? 'answers' : 'results'));
+  handle('ui:answersFirst', (on: unknown) => setAnswersFirst(on === true));
   handle('ui:openResult', (url: unknown) => {
     if (typeof url === 'string' && /^https?:\/\//i.test(url)) tabs?.create(url);
   });
@@ -681,6 +720,16 @@ function buildMenu(): void {
             click: () => setTheme(t),
           })),
         },
+        {
+          label: 'Search Answers',
+          accelerator: 'CmdOrCtrl+Shift+A',
+          click: () => {
+            const tab = tabs?.active;
+            if (tab && insights) setSearchView(insights.view(tab.id) === 'answers' && showingAnswers() ? 'results' : 'answers');
+          },
+        },
+        { label: 'Open Searches on Answers', type: 'checkbox', checked: settings.answersFirst, click: (item) => setAnswersFirst(item.checked) },
+        { type: 'separator' },
         { label: 'Legacy Mode', type: 'checkbox', checked: settings.legacy, accelerator: 'CmdOrCtrl+Shift+L', click: (item) => setLegacy(item.checked) },
       ],
     },

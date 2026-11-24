@@ -38,8 +38,10 @@ export interface AppState {
   /** The active tab shows a password field and has a fillable origin. */
   loginForm: { origin: string } | null;
   savePrompt: SavePrompt | null;
-  /** The active tab is a search results page that can be analyzed (opt-in). */
+  /** The active tab is a search results page that can be analyzed. */
   search: { query: string } | null;
+  /** Preference: open searches on the Answers view (analyzes every search automatically). */
+  answersFirst: boolean;
   /** AI analysis of the active tab's search results, if one was started. */
   insights: InsightsState | null;
 }
@@ -61,10 +63,12 @@ export interface ResultInsight {
   error?: string;
 }
 
+export type SearchView = 'results' | 'answers';
+
 export interface InsightsState {
   query: string;
-  /** Panel shown (the analysis keeps its results while the panel is closed). */
-  open: boolean;
+  /** Which view of the search the tab shows: DuckDuckGo's page, or the ranked answers. */
+  view: SearchView;
   /** 'unavailable': the on-device model can't run; see detail. */
   status: 'starting' | 'running' | 'done' | 'unavailable' | 'error';
   detail: string;
