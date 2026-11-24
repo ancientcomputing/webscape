@@ -27,6 +27,8 @@ The modern look follows your system's light or dark setting. To force one, use *
 
 Press **⇧⌘L**, or use **View → Legacy Mode**, for a mid-90s desktop-browser look:
 
+![Webscape Wanderer in Legacy mode: gray beveled toolbar with Back, Forward, Reload, Home, Search, Passwords and Stop buttons, a Location bar, a list of private tabs on the left, and a status bar showing 25 trackers blocked](docs/screenshots/legacy-mode.png)
+
 - gray `#C0C0C0` chrome with 3D bevels and 12px Verdana, legible on high-DPI screens
 - a big labelled toolbar (Back, Forward, Reload, Home, Search, Passwords, Stop)
 - a globe throbber that spins while pages load
