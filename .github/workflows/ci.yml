@@ -44,3 +44,9 @@ jobs:
       - name: Password vault test
         timeout-minutes: 3
         run: npx electron scripts/vault-test.cjs
+
+      # Encrypted bookmarks: tracking-parameter removal, folders, undo, the
+      # optional Touch ID lock and bookmarks.html import/export round trips.
+      - name: Bookmarks test
+        timeout-minutes: 3
+        run: npx electron scripts/bookmarks-test.cjs

@@ -34,9 +34,34 @@ export interface AppState {
   /** The user's appearance choice, and whether dark colors are in effect right now. */
   theme: ThemeSetting;
   dark: boolean;
+  bookmarks: BookmarksState;
   /** The active tab shows a password field and has a fillable origin. */
   loginForm: { origin: string } | null;
   savePrompt: SavePrompt | null;
+}
+
+export interface Bookmark {
+  id: string;
+  title: string;
+  /** Cleaned of tracking parameters when saved. */
+  url: string;
+  folder: string;
+  created: number;
+}
+
+export interface BookmarkData {
+  /** Folder names in display order; "Favorites" is always first. */
+  folders: string[];
+  bookmarks: Bookmark[];
+}
+
+export interface BookmarksState {
+  /** The OS can encrypt them (false: bookmarks can't be saved). */
+  available: boolean;
+  unlocked: boolean;
+  touchIDRequired: boolean;
+  /** The bookmark for the active tab's page, if it has one. */
+  activeId: string | null;
 }
 
 export interface VaultEntrySummary {
@@ -50,4 +75,4 @@ export type ThemeSetting = 'system' | 'light' | 'dark';
 
 export type NavAction = 'back' | 'forward' | 'reload' | 'stop';
 
-export type UICommand = 'focus-address' | 'toggle-vault' | 'new-tab-focus';
+export type UICommand = 'focus-address' | 'toggle-vault' | 'toggle-bookmarks' | 'new-tab-focus';

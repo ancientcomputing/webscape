@@ -337,3 +337,28 @@ body.legacy .toast {
   background: #ffffe1; color: var(--ink); border: 1px solid var(--dark);
   box-shadow: 2px 2px 0 #0004; font-size: 12px;
 }
+
+/* ---------- Bookmarks (legacy) ---------- */
+.l-sep { width: 2px; align-self: stretch; margin: 2px 4px; box-shadow: inset 1px 0 var(--shadow), inset -1px 0 var(--hilite); }
+.l-favs { display: flex; gap: 2px; flex: 1 1 auto; min-width: 0; overflow: hidden; }
+.l-fav { flex: none; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.l-personal .l-flex { display: none; }
+body.legacy .star-btn { display: none; }
+body.legacy .bm-section { max-height: 45%; margin-top: 6px; }
+body.legacy .bm-section .section-label { margin-top: 0; }
+body.legacy .section-toggle { font-weight: bold; color: var(--ink); }
+body.legacy .bm-hint { color: var(--ink); font-size: 12px; background: #fff; box-shadow: var(--sunken); padding: 6px; }
+body.legacy .linkish { color: var(--link); text-decoration: underline; }
+body.legacy .bm-folder-list { background: #fff; box-shadow: var(--sunken); padding: 3px; min-height: 120px; }
+body.legacy .bm-folder { border-radius: 0; padding: 3px 6px; color: var(--ink); }
+body.legacy .bm-folder:hover { background: transparent; }
+body.legacy .bm-folder.active { background: var(--navy); color: #fff; box-shadow: none; }
+body.legacy .bm-folder.active .bm-count { color: #fff; }
+body.legacy .bm-count { color: var(--shadow); font-size: 12px; }
+body.legacy .bm-inline-form input, body.legacy .bm-rename, body.legacy .bm-add-form input, body.legacy .bm-edit-fields input, body.legacy .bm-select {
+  height: 22px; border: 0; border-radius: 0; background: #fff; color: var(--ink);
+  box-shadow: var(--sunken); font: 12px var(--ui-font); padding: 0 5px;
+}
+body.legacy .bm-add-form { border-top: 1px dotted var(--shadow); }
+body.legacy .bm-settings, body.legacy .bm-settings .check { color: var(--ink); }
+body.legacy .toast-action { color: var(--link); text-decoration: underline; font-weight: normal; }

@@ -1,8 +1,9 @@
-import { app, BaseWindow, clipboard, ipcMain, IpcMainEvent, IpcMainInvokeEvent, Menu, nativeTheme, WebContentsView } from 'electron';
+import { app, BaseWindow, clipboard, dialog, ipcMain, IpcMainEvent, IpcMainInvokeEvent, Menu, nativeTheme, WebContentsView } from 'electron';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import type { AppState, NavAction, SavePrompt, ThemeSetting, UICommand, VaultEntrySummary } from '../shared/types';
+import type { AppState, Bookmark, BookmarkData, NavAction, SavePrompt, ThemeSetting, UICommand, VaultEntrySummary } from '../shared/types';
+import { BookmarkStore, cleanUrl, FAVORITES } from './bookmarks';
 import { cleanUserAgent, initBlocker } from './privacy';
 import { resolveInput, startPageUrl, TabManager } from './tabs';
 import { fillableOrigin, Vault } from './vault';
@@ -29,8 +30,10 @@ let insets = { left: 272, top: 8, right: 8, bottom: 8 };
 interface Settings {
   legacy: boolean;
   theme: ThemeSetting;
+  /** Keep bookmarks locked until Touch ID. */
+  bookmarksTouchID: boolean;
 }
-let settings: Settings = { legacy: false, theme: 'system' };
+let settings: Settings = { legacy: false, theme: 'system', bookmarksTouchID: false };
 const settingsFile = () => path.join(app.getPath('userData'), 'settings.json');
 
 function loadSettings(): void {
@@ -39,6 +42,7 @@ function loadSettings(): void {
     settings = {
       legacy: raw.legacy === true,
       theme: raw.theme === 'light' || raw.theme === 'dark' ? raw.theme : 'system',
+      bookmarksTouchID: raw.bookmarksTouchID === true,
     };
   } catch {
     /* first run */
@@ -88,6 +92,9 @@ let popoverMode: 'peek' | 'edit' | null = null;
 let popoverHeight = 64;
 let tabs: TabManager | null = null;
 let vault: Vault | null = null;
+let bookmarks: BookmarkStore | null = null;
+/** The last bookmark removed with the star, for Undo. */
+let lastRemovedBookmark: Bookmark | null = null;
 
 /** Logins captured from a form submit, waiting for the user to say Save or Not now. Never written anywhere. */
 const pending = new Map<number, SavePrompt & { password: string }>();
@@ -121,11 +128,88 @@ function buildState(): AppState {
     vaultUnlocked: vault?.unlocked ?? false,
     vaultAvailable: vault?.available ?? false,
     legacy: settings.legacy,
+    bookmarks: {
+      available: bookmarks?.available ?? false,
+      unlocked: bookmarks?.unlocked ?? false,
+      touchIDRequired: bookmarks?.touchIDRequired ?? false,
+      activeId: active && bookmarks?.unlocked ? bookmarks.idForUrl(active.url) : null,
+    },
     theme: settings.theme,
     dark: nativeTheme.shouldUseDarkColors,
     loginForm: active?.hasLoginForm && origin ? { origin } : null,
     savePrompt: prompt ? { tabId: prompt.tabId, origin: prompt.origin, username: prompt.username, update: prompt.update } : null,
   };
+}
+
+/** A short message in the sidebar. action 'undo' adds an Undo button (for removed bookmarks). */
+function toast(text: string, action?: 'undo'): void {
+  if (ui && !ui.webContents.isDestroyed()) ui.webContents.send('toast', { text, action });
+}
+
+/** Bookmarks changed (or locked/unlocked): refresh the UI, the address box and the menu. */
+let bookmarksQueued = false;
+function bookmarksChanged(): void {
+  pushState();
+  if (bookmarksQueued) return;
+  bookmarksQueued = true;
+  setImmediate(() => {
+    bookmarksQueued = false;
+    const snap = bookmarks?.snapshot() ?? null;
+    for (const v of [ui, popover]) if (v && !v.webContents.isDestroyed()) v.webContents.send('bookmarks', snap);
+    buildMenu();
+  });
+}
+
+/** Open bookmarks in a fresh private tab (its own empty memory), or in the current tab. */
+function openBookmarkUrl(url: string, where: 'new' | 'current' = 'new'): void {
+  const clean = cleanUrl(url);
+  if (!clean || !tabs) return;
+  if (where === 'current' && tabs.active) tabs.active.view.webContents.loadURL(clean).catch(() => {});
+  else tabs.create(clean);
+}
+
+async function bookmarkActivePage(mode: 'toggle' | 'add'): Promise<void> {
+  const tab = tabs?.active;
+  if (!tab || !bookmarks) return;
+  if (!cleanUrl(tab.url)) return toast("This page can't be bookmarked");
+  if (!bookmarks.available) return toast('Bookmarks need the system keychain');
+  if (!(await bookmarks.unlock('add a bookmark'))) return toast('Bookmarks stayed locked');
+  const existing = bookmarks.idForUrl(tab.url);
+  if (existing && mode === 'add') return toast('Already bookmarked');
+  if (existing) {
+    lastRemovedBookmark = (await bookmarks.remove(existing)) ?? null;
+    return toast('Bookmark removed', 'undo');
+  }
+  await bookmarks.add({ url: tab.url, title: tab.title, folder: FAVORITES });
+  toast(`Bookmarked in ${FAVORITES}`);
+}
+
+async function exportBookmarks(): Promise<string | null> {
+  if (!win || !bookmarks || !(await bookmarks.unlock('export your bookmarks'))) return null;
+  const { canceled, filePath } = await dialog.showSaveDialog(win, {
+    title: 'Export Bookmarks',
+    defaultPath: path.join(app.getPath('downloads'), 'bookmarks.html'),
+    filters: [{ name: 'Bookmarks file', extensions: ['html'] }],
+  });
+  if (canceled || !filePath) return null;
+  await fs.promises.writeFile(filePath, bookmarks.exportHtml(), { mode: 0o600 });
+  toast('Bookmarks exported (the file is not encrypted)');
+  return filePath;
+}
+
+async function importBookmarks(): Promise<{ added: number; skipped: number } | null> {
+  if (!win || !bookmarks || !(await bookmarks.unlock('import bookmarks'))) return null;
+  const { canceled, filePaths } = await dialog.showOpenDialog(win, {
+    title: 'Import Bookmarks',
+    properties: ['openFile'],
+    filters: [{ name: 'Bookmarks file', extensions: ['html', 'htm'] }],
+  });
+  if (canceled || !filePaths[0]) return null;
+  const stat = await fs.promises.stat(filePaths[0]);
+  if (stat.size > 20 * 1024 * 1024) throw new Error('That file is too large to be a bookmarks file.');
+  const result = await bookmarks.importHtml(await fs.promises.readFile(filePaths[0], 'utf8'));
+  toast(`Imported ${result.added} bookmark${result.added === 1 ? '' : 's'}${result.skipped ? ` (${result.skipped} skipped)` : ''}`);
+  return result;
 }
 
 function sendCommand(cmd: UICommand): void {
@@ -404,6 +488,43 @@ function registerUIHandlers(): void {
   });
   handle('ui:overlay', (on: boolean) => tabs?.setOverlay(on === true));
 
+  // --- Bookmarks ---------------------------------------------------------
+  const str = (v: unknown, max = 4096) => (typeof v === 'string' ? v.slice(0, max) : '');
+  handle('ui:bookmarks', (): BookmarkData | null => bookmarks!.snapshot());
+  handle('ui:bookmarkToggle', () => bookmarkActivePage('toggle'));
+  handle('ui:bookmarkAdd', () => bookmarkActivePage('add'));
+  handle('ui:bookmarkUndo', async () => {
+    if (!lastRemovedBookmark) return;
+    await bookmarks!.restore(lastRemovedBookmark);
+    lastRemovedBookmark = null;
+  });
+  handle('ui:bookmarkOpen', (url: unknown, where: unknown) => openBookmarkUrl(str(url), where === 'current' ? 'current' : 'new'));
+  handle('ui:bookmarkSave', async (id: unknown, patch: unknown) => {
+    const p = (patch ?? {}) as Record<string, unknown>;
+    const fields = {
+      title: p.title === undefined ? undefined : str(p.title, 500),
+      url: p.url === undefined ? undefined : str(p.url),
+      folder: p.folder === undefined ? undefined : str(p.folder, 120),
+    };
+    if (typeof id === 'string' && id) await bookmarks!.update(id, fields);
+    else await bookmarks!.add({ url: fields.url ?? '', title: fields.title, folder: fields.folder });
+  });
+  handle('ui:bookmarkDelete', async (id: unknown) => {
+    await bookmarks!.remove(str(id, 64));
+  });
+  handle('ui:folderAdd', (name: unknown) => bookmarks!.addFolder(str(name, 120)));
+  handle('ui:folderRename', (from: unknown, to: unknown) => bookmarks!.renameFolder(str(from, 120), str(to, 120)));
+  handle('ui:folderDelete', (name: unknown) => bookmarks!.removeFolder(str(name, 120)));
+  handle('ui:bookmarksUnlock', () => bookmarks!.unlock('show your bookmarks'));
+  handle('ui:bookmarksLock', () => bookmarks!.lock());
+  handle('ui:bookmarksSetTouchID', (on: unknown) => {
+    settings.bookmarksTouchID = on === true;
+    saveSettings();
+    bookmarks!.setRequireTouchID(settings.bookmarksTouchID);
+  });
+  handle('ui:bookmarksImport', () => importBookmarks());
+  handle('ui:bookmarksExport', () => exportBookmarks());
+
   // --- Passwords ---------------------------------------------------------
   handle('ui:vaultUnlock', async () => vault!.unlock('unlock your saved passwords'));
   handle('ui:vaultLock', () => vault!.lock());
@@ -555,6 +676,7 @@ function buildMenu(): void {
         ...tabShortcuts,
       ],
     },
+    bookmarksMenu(),
     {
       label: 'Passwords',
       submenu: [
@@ -565,6 +687,44 @@ function buildMenu(): void {
     { role: 'windowMenu' },
   ];
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
+}
+
+/** Bookmarks menu: actions, then Favorites, then one submenu per folder. */
+function bookmarksMenu(): Electron.MenuItemConstructorOptions {
+  const snap = bookmarks?.snapshot();
+  const item = (b: Bookmark): Electron.MenuItemConstructorOptions => ({
+    label: b.title.length > 60 ? `${b.title.slice(0, 57)}…` : b.title,
+    click: () => openBookmarkUrl(b.url),
+  });
+  const items: Electron.MenuItemConstructorOptions[] = [
+    { label: 'Bookmark This Page', accelerator: 'CmdOrCtrl+D', click: () => void bookmarkActivePage('add') },
+    { label: 'Show All Bookmarks', accelerator: 'CmdOrCtrl+Shift+B', click: () => sendCommand('toggle-bookmarks') },
+    { type: 'separator' },
+  ];
+  if (!snap) {
+    items.push({
+      label: bookmarks?.available === false ? 'Bookmarks need the system keychain' : 'Unlock Bookmarks…',
+      enabled: bookmarks?.available !== false,
+      click: () => void bookmarks?.unlock('show your bookmarks'),
+    });
+  } else {
+    const favs = snap.bookmarks.filter((b) => b.folder === FAVORITES).slice(0, 30);
+    items.push(...(favs.length ? favs.map(item) : [{ label: 'No favorites yet', enabled: false }]));
+    const others = snap.folders.filter((f) => f !== FAVORITES);
+    if (others.length) {
+      items.push({ type: 'separator' });
+      for (const f of others) {
+        const inFolder = snap.bookmarks.filter((b) => b.folder === f).slice(0, 60);
+        items.push({ label: f, submenu: inFolder.length ? inFolder.map(item) : [{ label: 'Empty', enabled: false }] });
+      }
+    }
+  }
+  items.push(
+    { type: 'separator' },
+    { label: 'Import Bookmarks…', click: () => void importBookmarks().catch((e) => toast(String(e.message ?? e))) },
+    { label: 'Export Bookmarks…', click: () => void exportBookmarks().catch((e) => toast(String(e.message ?? e))) },
+  );
+  return { label: 'Bookmarks', submenu: items };
 }
 
 // ---------------------------------------------------------------------------
@@ -600,6 +760,8 @@ if (!SMOKE_TEST && !app.requestSingleInstanceLock()) {
     if (process.platform === 'darwin' && !app.isPackaged && fs.existsSync(ICON)) app.dock?.setIcon(ICON);
     vault = new Vault(path.join(app.getPath('userData'), 'vault.bin'), pushState);
     void vault.init();
+    bookmarks = new BookmarkStore(path.join(app.getPath('userData'), 'bookmarks.bin'), bookmarksChanged);
+    void bookmarks.init(settings.bookmarksTouchID);
     void initBlocker(app.getPath('userData'));
     registerUIHandlers();
     registerPageHandlers();

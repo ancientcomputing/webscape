@@ -1,7 +1,7 @@
-import { safeStorage, systemPreferences } from 'electron';
+import { systemPreferences } from 'electron';
 import crypto from 'node:crypto';
-import fs from 'node:fs';
 import type { VaultEntrySummary } from '../shared/types';
+import { EncryptedJsonFile, encryptionAvailable } from './encrypted-file';
 
 interface Entry {
   id: string;
@@ -33,19 +33,18 @@ export class Vault {
   private unlocking: Promise<boolean> | null = null;
   /** null until init() has asked the OS whether encryption is available. */
   private availability: boolean | null = null;
-  /** Writes run one at a time, in order. */
-  private writing: Promise<void> = Promise.resolve();
+  private readonly store: EncryptedJsonFile<{ version: number; entries: Entry[] }>;
 
   constructor(
-    private readonly file: string,
+    file: string,
     private readonly onChange: () => void,
-  ) {}
+  ) {
+    this.store = new EncryptedJsonFile(file);
+  }
 
   /** Ask the OS whether real encryption is available. Call once after app ready. */
   async init(): Promise<void> {
-    let ok = await safeStorage.isAsyncEncryptionAvailable();
-    if (ok && process.platform === 'linux' && safeStorage.getSelectedStorageBackend() === 'basic_text') ok = false;
-    this.availability = ok;
+    this.availability = await encryptionAvailable();
     this.onChange();
   }
 
@@ -98,27 +97,13 @@ export class Vault {
   }
 
   private async read(): Promise<{ entries: Entry[]; reEncrypt: boolean }> {
-    if (!fs.existsSync(this.file)) return { entries: [], reEncrypt: false };
-    const blob = await fs.promises.readFile(this.file);
-    const { result, shouldReEncrypt } = await safeStorage.decryptStringAsync(blob);
-    const data = JSON.parse(result) as { version: number; entries: Entry[] };
-    return { entries: data.entries, reEncrypt: shouldReEncrypt };
+    const got = await this.store.read();
+    return got ? { entries: got.data.entries, reEncrypt: got.reEncrypt } : { entries: [], reEncrypt: false };
   }
 
-  /** Encrypt and save the current entries. Atomic (temp file + rename) and serialised. */
   private write(): Promise<void> {
     if (!this.entries) return Promise.reject(new Error('Vault is locked'));
-    const snapshot = JSON.stringify({ version: 1, entries: this.entries });
-    const run = async () => {
-      const blob = await safeStorage.encryptStringAsync(snapshot);
-      const tmp = `${this.file}.tmp`;
-      await fs.promises.writeFile(tmp, blob, { mode: 0o600 });
-      await fs.promises.rename(tmp, this.file);
-    };
-    // Keep the queue alive after a failure, but still report it to this caller.
-    const next = this.writing.then(run, run);
-    this.writing = next.catch(() => {});
-    return next;
+    return this.store.write({ version: 1, entries: this.entries });
   }
 
   private requireUnlocked(): Entry[] {

@@ -6,7 +6,7 @@
 
 <p align="center"><a href="https://github.com/ancientcomputing/webscape/actions/workflows/ci.yml"><img src="https://github.com/ancientcomputing/webscape/actions/workflows/ci.yml/badge.svg" alt="CI status"></a></p>
 
-A private-by-default web browser built on Chromium. Every tab has its own memory, nothing about your browsing is written to disk, tabs are vertical, and passwords are built in. There are no extensions.
+A private-by-default web browser built on Chromium. Every tab has its own memory, nothing about your browsing is written to disk except what you choose to keep, tabs are vertical, and passwords and bookmarks are built in. There are no extensions.
 
 > Status: early prototype (v0.1). It works as a daily browser for basic use, but it hasn't had a security audit. See [Limitations](#limitations).
 
@@ -15,15 +15,30 @@ A private-by-default web browser built on Chromium. Every tab has its own memory
 | | |
 |---|---|
 | **Each tab has its own memory** | Every tab gets its own in-memory Chromium partition: its own cookies, localStorage, IndexedDB, cache and service workers. Tab A can't see that you're signed in on tab B, and trackers can't link the two. When you close a tab, its memory is wiped. |
-| **Nothing is written to disk** | Tab partitions never get a `persist:` prefix, so Chromium keeps them in RAM only. When you quit, everything is gone. There's no history, no cookie jar and no session restore. |
+| **Nothing is written to disk** | Tab partitions never get a `persist:` prefix, so Chromium keeps them in RAM only. When you quit, everything is gone. There's no history, no cookie jar and no session restore. The only things kept are passwords and bookmarks you choose to save, both encrypted. |
 | **Vertical tabs** | Tabs are listed in a sidebar. Popups such as "Sign in with…" open as linked tabs, indented under the tab that opened them. |
 | **Built-in password vault** | Saves and fills logins natively, with no extension involved. The vault is encrypted with the OS keychain and unlocked with Touch ID on Macs that have it. It fills only when you click, never automatically, and only on the site the login was saved for. It includes a password generator. |
+| **Encrypted bookmarks** | Pages you bookmark are encrypted with the OS keychain, cleaned of tracking parameters, and opened in a fresh private tab. No history, visit counts or favicons are ever stored. |
 | **Tracker blocking in the network layer** | Requests to ads and trackers are cancelled before they leave the browser, using Ghostery's filter engine and its prebuilt ads-and-tracking lists. |
 | **No extensions** | Extensions are a major source of browser data leaks. Everything an extension would do here is built in. |
 
 ### Floating address box
 
 The sidebar shows a compact address. Hover over it and the **whole address** appears in a wide box floating over the page, with the site's domain in bold so look-alike domains stand out. Click it, or press **⌘L**, and the same box becomes a full-width field for typing. Return goes there; Esc cancels. If you switch to another app, the box stays open with what you typed.
+
+### Bookmarks
+
+Bookmarks are treated like passwords: things you deliberately chose to keep, stored encrypted, and nothing else.
+
+- **⌘D** or the **☆** in the address field bookmarks the page in **Favorites**. A filled ★ means it's already bookmarked; click it to remove the bookmark (with Undo).
+- **Favorites** appear in the sidebar under your tabs, and as buttons on the Personal toolbar in Legacy mode.
+- **⇧⌘B** opens the Bookmarks page to search, edit, organise into folders and delete. The **Bookmarks** menu lists them too.
+- **The address box suggests matching bookmarks** as you type, from the list on your machine only, with no network lookup.
+- **Opening a bookmark starts a fresh private tab** with its own empty memory. You won't be signed in, but the password vault offers to fill your login.
+- **Tracking parameters are removed when you save** (`utm_*`, `fbclid`, `gclid`, `msclkid` and others), so saved links don't carry marketing tags.
+- **Stored encrypted** in `bookmarks.bin` with the OS keychain. They unlock automatically at launch; turn on **Require Touch ID** on the Bookmarks page to keep them locked until you unlock them, with an automatic re-lock after 10 idle minutes.
+- **Import and export** use the standard `bookmarks.html` format, whose header is still `NETSCAPE-Bookmark-file-1`. Any browser can read it. A browser's toolbar folder imports into Favorites, and nested folders are flattened (`Parent / Child`). Exported files are not encrypted.
+- **Left out on purpose:** sync (it would need an account and a server), favicons (extra network requests) and "recently" or "most visited" (that's history by another name).
 
 ### Light and dark
 
@@ -94,6 +109,8 @@ The vault only saves and fills on `https://` origins, plus `http://localhost` fo
 | ⌘1…⌘9 | Jump to a tab (⌘9 = last) |
 | ⇧⌘P | Open the password vault |
 | ⇧⌘L | Toggle Legacy mode |
+| ⌘D | Bookmark this page |
+| ⇧⌘B | Show all bookmarks |
 | ⌥⌘I | Developer tools for the current tab |
 
 On Windows and Linux, use Ctrl instead of ⌘.
@@ -134,8 +151,9 @@ scripts/           build helpers; dev-app-name.mjs names the dev Electron.app "W
 | File | Contents |
 |---|---|
 | `vault.bin` | Your saved logins, encrypted with the OS keychain |
+| `bookmarks.bin` | Your bookmarks, encrypted with the OS keychain |
 | `blocker-engine.bin` | Compiled tracker filter lists (no personal data) |
-| `settings.json` | UI look (modern or legacy, light or dark) |
+| `settings.json` | UI look (modern or legacy, light or dark), and whether bookmarks need Touch ID |
 | Chromium housekeeping | GPU shader caches and the sidebar UI's own storage. Web pages never use this profile. |
 
 The folder is `~/Library/Application Support/Webscape Wanderer` on macOS, `%APPDATA%` on Windows and `~/.config` on Linux.
@@ -155,7 +173,7 @@ The folder is `~/Library/Application Support/Webscape Wanderer` on macOS, `%APPD
 The browser engine is the `electron` package, which bundles Chromium. Electron releases a new major version about every 8 weeks and supports only the newest three, so an app that isn't updated stops getting security fixes within about six months.
 
 - **Dependabot** ([.github/dependabot.yml](.github/dependabot.yml)) checks npm daily. Electron updates get their own pull request.
-- **CI** ([.github/workflows/ci.yml](.github/workflows/ci.yml)) type-checks, builds, **smoke-tests** and **vault-tests** every pull request on macOS. The smoke test launches the real browser and checks that the UI loads, that each tab gets its own in-memory session, and that the user agent doesn't reveal Electron.
+- **CI** ([.github/workflows/ci.yml](.github/workflows/ci.yml)) type-checks, builds, **smoke-tests** and runs the **vault** and **bookmarks** tests on every pull request on macOS. The smoke test launches the real browser and checks that the UI loads, that each tab gets its own in-memory session, and that the user agent doesn't reveal Electron.
 - **Patch and minor updates** are mostly security fixes. Merge them as soon as CI is green.
 - **Major updates** can change Electron's APIs. Merge them after CI passes and a quick manual check with `npm start`.
 
@@ -164,9 +182,10 @@ Run the checks locally with:
 ```bash
 npm run build && WEBSCAPE_SMOKE_TEST=1 npx electron .   # smoke test
 npm run test:vault                                     # password vault, via the real keychain
+npm run test:bookmarks                                 # bookmarks, via the real keychain
 ```
 
-The vault test uses its own keychain entry and a temporary folder, so it never touches your saved passwords.
+The vault and bookmarks tests use their own keychain entries and a temporary folder, so they never touch your saved passwords or bookmarks.
 
 ## Contributing
 

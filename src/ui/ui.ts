@@ -1,9 +1,11 @@
-import type { AppState, NavAction, TabState, UICommand, VaultEntrySummary } from '../shared/types.js';
+import type { AppState, Bookmark, BookmarkData, NavAction, TabState, UICommand, VaultEntrySummary } from '../shared/types.js';
 
 interface Bridge {
   invoke<T = unknown>(channel: string, ...args: unknown[]): Promise<T>;
   onState(cb: (s: AppState) => void): void;
   onCommand(cb: (c: UICommand) => void): void;
+  onBookmarks(cb: (b: BookmarkData | null) => void): void;
+  onToast(cb: (t: { text: string; action?: 'undo' }) => void): void;
 }
 const api = (window as unknown as { webscape: Bridge }).webscape;
 
@@ -34,7 +36,11 @@ function icon(d: string): SVGSVGElement {
   return svg;
 }
 
-let state: AppState = { tabs: [], activeId: null, vaultUnlocked: false, vaultAvailable: true, legacy: false, theme: 'system', dark: true, loginForm: null, savePrompt: null };
+let state: AppState = {
+  tabs: [], activeId: null, vaultUnlocked: false, vaultAvailable: true, legacy: false, theme: 'system', dark: true,
+  bookmarks: { available: true, unlocked: false, touchIDRequired: false, activeId: null },
+  loginForm: null, savePrompt: null,
+};
 let vaultOpen = false;
 let fillChoices: { origin: string; entries: VaultEntrySummary[] } | null = null;
 
@@ -42,13 +48,22 @@ let fillChoices: { origin: string; entries: VaultEntrySummary[] } | null = null;
 // Toast
 // ---------------------------------------------------------------------------
 let toastTimer: number | undefined;
-function toast(msg: string): void {
+function toast(msg: string, action?: 'undo'): void {
   const el = $('toast');
-  el.textContent = msg;
+  el.replaceChildren(h('span', { text: msg }));
+  if (action === 'undo') {
+    const undo = h('button', { class: 'toast-action', text: 'Undo' });
+    undo.addEventListener('click', () => {
+      el.hidden = true;
+      void api.invoke('ui:bookmarkUndo');
+    });
+    el.append(undo);
+  }
   el.hidden = false;
   clearTimeout(toastTimer);
-  toastTimer = window.setTimeout(() => (el.hidden = true), 2400);
+  toastTimer = window.setTimeout(() => (el.hidden = true), action ? 5000 : 2400);
 }
+api.onToast(({ text, action }) => toast(text, action));
 
 // ---------------------------------------------------------------------------
 // Tabs
@@ -94,7 +109,7 @@ function renderTabs(): void {
         close,
       );
       li.addEventListener('click', () => {
-        closeVault();
+        closePages();
         void api.invoke('ui:select', tab.id);
       });
       li.addEventListener('auxclick', (e) => {
@@ -125,6 +140,10 @@ function renderChrome(): void {
   const lock = $('lock');
   lock.className = `lock ${!tab?.url ? 'none' : tab.secure ? 'secure' : 'insecure'}`;
   lock.title = !tab?.url ? '' : tab.secure ? 'Secure connection' : 'Not secure';
+  const star = $('star');
+  star.hidden = !tab?.url || !state.bookmarks.available;
+  star.classList.toggle('on', !!state.bookmarks.activeId);
+  star.title = state.bookmarks.activeId ? 'Remove bookmark' : 'Bookmark this page (⌘D)';
   const n = tab?.blocked ?? 0;
   const blockedText = `${n} tracker${n === 1 ? '' : 's'} blocked`;
   $('shield-text').textContent = blockedText;
@@ -194,7 +213,7 @@ for (const field of [legacyAddress]) {
     e.preventDefault();
     const value = field.value.trim();
     if (!value) return;
-    closeVault();
+    closePages();
     void api.invoke('ui:navigate', value);
     field.blur();
   });
@@ -205,7 +224,7 @@ $('back').addEventListener('click', nav('back'));
 $('forward').addEventListener('click', nav('forward'));
 $('reload').addEventListener('click', () => void api.invoke('ui:nav', activeTab()?.loading ? 'stop' : 'reload'));
 const newTab = () => {
-  closeVault();
+  closePages();
   void api.invoke('ui:newTab');
 };
 $('new-tab').addEventListener('click', newTab);
@@ -220,16 +239,18 @@ const legacyActions: Record<string, () => void> = {
   reload: nav('reload'),
   stop: nav('stop'),
   home: () => {
-    closeVault();
+    closePages();
     void api.invoke('ui:home');
   },
   search: () => {
-    closeVault();
+    closePages();
     void api.invoke('ui:navigate', 'https://duckduckgo.com/');
   },
   passwords: () => (vaultOpen ? closeVault() : openVault()),
   'new-tab': newTab,
   modern: () => void api.invoke('ui:setLegacy', false),
+  bookmark: () => void api.invoke('ui:bookmarkAdd'), // "Add Bookmark" only adds; it never removes
+  bookmarks: () => (bookmarksOpen ? closeBookmarks() : openBookmarks()),
 };
 for (const btn of document.querySelectorAll<HTMLButtonElement>('[data-action]')) {
   btn.addEventListener('click', () => legacyActions[btn.dataset.action!]?.());
@@ -339,6 +360,7 @@ let vaultEntries: VaultEntrySummary[] = [];
 
 function openVault(): void {
   if (vaultOpen) return;
+  closeBookmarks();
   vaultOpen = true;
   $('vault-page').hidden = false;
   document.body.classList.add('vault-mode');
@@ -404,7 +426,7 @@ $('vault-unlock').addEventListener('click', async () => {
 });
 $('vault-search').addEventListener('input', renderVaultList);
 document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape' && vaultOpen) closeVault();
+  if (e.key === 'Escape' && (vaultOpen || bookmarksOpen) && !(e.target instanceof HTMLInputElement)) closePages();
 });
 
 $('add-form').addEventListener('submit', async (e) => {
@@ -452,6 +474,331 @@ $('gen-copy').addEventListener('click', async () => {
 });
 
 // ---------------------------------------------------------------------------
+// Bookmarks
+// ---------------------------------------------------------------------------
+const FAVORITES = 'Favorites';
+let bookmarkData: BookmarkData | null = null;
+let bookmarksOpen = false;
+let selectedFolder = FAVORITES;
+let editingId: string | null = null;
+let renamingFolder = false;
+
+function closePages(): void {
+  closeVault();
+  closeBookmarks();
+}
+
+const hostOfUrl = (url: string) => {
+  try {
+    return new URL(url).host;
+  } catch {
+    return '';
+  }
+};
+const bookmarkAvatar = (b: Bookmark) => avatarFor({ host: hostOfUrl(b.url), loading: false } as TabState);
+const errorText = (ex: unknown) => String((ex as Error)?.message ?? ex).replace(/^Error invoking remote method '[^']+': Error: /, '');
+
+async function guarded(fn: () => Promise<unknown>): Promise<void> {
+  try {
+    await fn();
+  } catch (ex) {
+    toast(errorText(ex));
+  }
+}
+
+$('star').addEventListener('mousedown', (e) => e.stopPropagation()); // don't open the address box
+$('star').addEventListener('click', (e) => {
+  e.stopPropagation();
+  void guarded(() => api.invoke('ui:bookmarkToggle'));
+});
+
+// --- Sidebar: Favorites -----------------------------------------------------
+let favsCollapsed = false;
+$('bm-collapse').addEventListener('click', () => {
+  favsCollapsed = !favsCollapsed;
+  $('bm-collapse').setAttribute('aria-expanded', String(!favsCollapsed));
+  renderFavorites();
+});
+$('bm-all').addEventListener('click', () => (bookmarksOpen ? closeBookmarks() : openBookmarks()));
+
+function renderFavorites(): void {
+  const list = $('bm-list');
+  const hint = $('bm-hint');
+  $('bm-section').classList.toggle('collapsed', favsCollapsed);
+  hint.replaceChildren();
+  if (!state.bookmarks.available) {
+    list.replaceChildren();
+    hint.textContent = 'Bookmarks need the system keychain.';
+    hint.hidden = favsCollapsed;
+    return;
+  }
+  if (!bookmarkData) {
+    list.replaceChildren();
+    const b = h('button', { class: 'linkish', text: 'Unlock bookmarks' });
+    b.addEventListener('click', () => void api.invoke('ui:bookmarksUnlock'));
+    hint.append(b);
+    hint.hidden = favsCollapsed;
+    return;
+  }
+  const favs = bookmarkData.bookmarks.filter((b) => b.folder === FAVORITES);
+  hint.textContent = favs.length ? '' : 'Press ⌘D or ☆ to bookmark a page.';
+  hint.hidden = favsCollapsed || favs.length > 0;
+  list.replaceChildren(
+    ...(favsCollapsed ? [] : favs).map((b) => {
+      const li = h('li', { class: 'tab bm-item', title: `${b.title}\n${b.url}` }, bookmarkAvatar(b), h('span', { class: 'tab-title', text: b.title }));
+      li.addEventListener('click', () => {
+        closePages();
+        void api.invoke('ui:bookmarkOpen', b.url, 'new');
+      });
+      li.addEventListener('auxclick', (e) => {
+        if (e.button === 1) void api.invoke('ui:bookmarkOpen', b.url, 'new');
+      });
+      return li;
+    }),
+  );
+}
+
+// --- Legacy personal toolbar -------------------------------------------------
+function renderLegacyFavorites(): void {
+  const favs = bookmarkData?.bookmarks.filter((b) => b.folder === FAVORITES) ?? [];
+  $('l-favs').replaceChildren(
+    ...favs.map((b) => {
+      const chip = h('button', { class: 'l-chip l-fav', text: b.title.length > 28 ? `${b.title.slice(0, 26)}…` : b.title, title: `${b.title}\n${b.url}`, attrs: { role: 'listitem' } });
+      chip.addEventListener('click', () => {
+        closePages();
+        void api.invoke('ui:bookmarkOpen', b.url, 'new');
+      });
+      return chip;
+    }),
+  );
+}
+
+// --- Bookmarks page ------------------------------------------------------------
+function openBookmarks(): void {
+  if (bookmarksOpen) return;
+  closeVault();
+  bookmarksOpen = true;
+  $('bm-page').hidden = false;
+  document.body.classList.add('vault-mode');
+  void api.invoke('ui:overlay', true);
+  renderBookmarksPage();
+}
+
+function closeBookmarks(): void {
+  if (!bookmarksOpen) return;
+  bookmarksOpen = false;
+  editingId = null;
+  renamingFolder = false;
+  $('bm-page').hidden = true;
+  document.body.classList.remove('vault-mode');
+  void api.invoke('ui:overlay', false);
+}
+
+function renderBookmarksPage(): void {
+  if (!bookmarksOpen) return;
+  const unlocked = !!bookmarkData;
+  $('bm-locked').hidden = unlocked;
+  $('bm-open').hidden = !unlocked;
+  $<HTMLButtonElement>('bm-import').disabled = !state.bookmarks.available;
+  $<HTMLButtonElement>('bm-export').disabled = !unlocked;
+  const unlockBtn = $<HTMLButtonElement>('bm-unlock');
+  unlockBtn.disabled = !state.bookmarks.available;
+  $('bm-locked-text').textContent = state.bookmarks.available ? 'Your bookmarks are locked.' : 'Bookmarks need the system keychain, which is unavailable.';
+  if (!bookmarkData) return;
+  if (!bookmarkData.folders.includes(selectedFolder)) selectedFolder = FAVORITES;
+  $<HTMLInputElement>('bm-touchid').checked = state.bookmarks.touchIDRequired;
+  $('bm-lock').hidden = !state.bookmarks.touchIDRequired;
+  renderFolderList();
+  renderBookmarkItems();
+}
+
+function renderFolderList(): void {
+  const data = bookmarkData!;
+  $('bm-folder-list').replaceChildren(
+    ...data.folders.map((f) => {
+      const count = data.bookmarks.filter((b) => b.folder === f).length;
+      const active = f === selectedFolder && !$<HTMLInputElement>('bm-search').value.trim();
+      if (active && renamingFolder) {
+        const input = h('input', { class: 'bm-rename', attrs: { value: f, 'aria-label': 'Folder name' } });
+        const save = () =>
+          guarded(async () => {
+            const to = input.value.trim();
+            renamingFolder = false;
+            if (to && to !== f) {
+              await api.invoke('ui:folderRename', f, to);
+              selectedFolder = to;
+            }
+            renderBookmarksPage();
+          });
+        input.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter') void save();
+          if (e.key === 'Escape') {
+            renamingFolder = false;
+            renderBookmarksPage();
+          }
+        });
+        input.addEventListener('blur', () => void save());
+        queueMicrotask(() => {
+          input.focus();
+          input.select();
+        });
+        return h('li', { class: 'bm-folder active' }, input);
+      }
+      const li = h('li', { class: `bm-folder${active ? ' active' : ''}` }, h('span', { class: 'bm-folder-name', text: f }), h('span', { class: 'bm-count', text: String(count) }));
+      li.addEventListener('click', () => {
+        selectedFolder = f;
+        editingId = null;
+        renamingFolder = false;
+        $<HTMLInputElement>('bm-search').value = '';
+        renderBookmarksPage();
+      });
+      return li;
+    }),
+  );
+  const isFav = selectedFolder === FAVORITES;
+  $('bm-folder-actions').hidden = isFav || !!$<HTMLInputElement>('bm-search').value.trim();
+}
+
+function folderSelect(current: string): HTMLSelectElement {
+  const sel = h('select', { class: 'bm-select', attrs: { 'aria-label': 'Folder' } });
+  for (const f of bookmarkData!.folders) {
+    const o = h('option', { text: f, attrs: { value: f } });
+    if (f === current) o.selected = true;
+    sel.append(o);
+  }
+  return sel;
+}
+
+function renderBookmarkItems(): void {
+  const data = bookmarkData!;
+  const q = $<HTMLInputElement>('bm-search').value.trim().toLowerCase();
+  const terms = q.split(/\s+/).filter(Boolean);
+  const shown = terms.length
+    ? data.bookmarks.filter((b) => terms.every((t) => b.title.toLowerCase().includes(t) || b.url.toLowerCase().includes(t)))
+    : data.bookmarks.filter((b) => b.folder === selectedFolder);
+  const empty = $('bm-empty');
+  empty.hidden = shown.length > 0;
+  empty.textContent = terms.length ? 'No bookmarks match.' : selectedFolder === FAVORITES ? 'No favorites yet. Press ⌘D or ☆ on any page.' : 'This folder is empty.';
+  $('bm-add-form').hidden = terms.length > 0;
+
+  $('bm-items').replaceChildren(
+    ...shown.map((b) => {
+      if (b.id === editingId) {
+        const title = h('input', { attrs: { value: b.title, 'aria-label': 'Title' } });
+        const url = h('input', { attrs: { value: b.url, 'aria-label': 'Address', spellcheck: 'false' } });
+        const folder = folderSelect(b.folder);
+        const save = h('button', { class: 'btn primary small', text: 'Save' });
+        const cancel = h('button', { class: 'btn ghost small', text: 'Cancel' });
+        save.addEventListener('click', () =>
+          void guarded(async () => {
+            await api.invoke('ui:bookmarkSave', b.id, { title: title.value, url: url.value, folder: folder.value });
+            editingId = null;
+          }),
+        );
+        cancel.addEventListener('click', () => {
+          editingId = null;
+          renderBookmarkItems();
+        });
+        const form = h('li', { class: 'vault-row bm-edit' }, h('div', { class: 'bm-edit-fields' }, title, url, folder), h('div', { class: 'row' }, cancel, save));
+        form.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter') save.click();
+          if (e.key === 'Escape') cancel.click();
+        });
+        queueMicrotask(() => title.focus());
+        return form;
+      }
+      const open = h('button', { class: 'btn ghost small', text: 'Open' });
+      open.addEventListener('click', () => {
+        closePages();
+        void api.invoke('ui:bookmarkOpen', b.url, 'new');
+      });
+      const edit = h('button', { class: 'btn ghost small', text: 'Edit' });
+      edit.addEventListener('click', () => {
+        editingId = b.id;
+        renderBookmarkItems();
+      });
+      const del = h('button', { class: 'btn ghost small danger', text: 'Delete' });
+      del.addEventListener('click', () => void guarded(() => api.invoke('ui:bookmarkDelete', b.id)));
+      return h(
+        'li',
+        { class: 'vault-row' },
+        bookmarkAvatar(b),
+        h(
+          'div',
+          { class: 'vault-meta' },
+          h('div', { class: 'vault-site', text: b.title }),
+          h('div', { class: 'vault-user', text: terms.length && b.folder !== FAVORITES ? `${b.folder} · ${b.url}` : b.url }),
+        ),
+        h('div', { class: 'row' }, open, edit, del),
+      );
+    }),
+  );
+}
+
+$('bm-search').addEventListener('input', () => {
+  editingId = null;
+  renderBookmarksPage();
+});
+$('bm-close').addEventListener('click', closeBookmarks);
+$('bm-unlock').addEventListener('click', async () => {
+  const ok = await api.invoke<boolean>('ui:bookmarksUnlock');
+  if (!ok) toast('Bookmarks stayed locked');
+});
+$('bm-lock').addEventListener('click', () => void api.invoke('ui:bookmarksLock'));
+$('bm-touchid').addEventListener('change', (e) => void api.invoke('ui:bookmarksSetTouchID', (e.target as HTMLInputElement).checked));
+$('bm-import').addEventListener('click', () => void guarded(() => api.invoke('ui:bookmarksImport')));
+$('bm-export').addEventListener('click', () => void guarded(() => api.invoke('ui:bookmarksExport')));
+$('bm-folder-rename').addEventListener('click', () => {
+  renamingFolder = true;
+  renderBookmarksPage();
+});
+$('bm-folder-delete').addEventListener('click', () => {
+  const n = bookmarkData?.bookmarks.filter((b) => b.folder === selectedFolder).length ?? 0;
+  if (!confirm(`Delete the folder "${selectedFolder}"${n ? ` and its ${n} bookmark${n === 1 ? '' : 's'}` : ''}?`)) return;
+  void guarded(async () => {
+    await api.invoke('ui:folderDelete', selectedFolder);
+    selectedFolder = FAVORITES;
+  });
+});
+$('bm-folder-form').addEventListener('submit', (e) => {
+  e.preventDefault();
+  const form = e.target as HTMLFormElement;
+  const name = String(new FormData(form).get('name') ?? '').trim();
+  if (!name) return;
+  void guarded(async () => {
+    selectedFolder = await api.invoke<string>('ui:folderAdd', name);
+    form.reset();
+  });
+});
+$('bm-add-form').addEventListener('submit', (e) => {
+  e.preventDefault();
+  const form = e.target as HTMLFormElement;
+  const data = new FormData(form);
+  let url = String(data.get('url') ?? '').trim();
+  if (url && !/^[a-z]+:/i.test(url)) url = `https://${url}`;
+  const err = $('bm-error');
+  void (async () => {
+    try {
+      await api.invoke('ui:bookmarkSave', null, { url, title: String(data.get('title') ?? ''), folder: selectedFolder });
+      form.reset();
+      err.hidden = true;
+    } catch (ex) {
+      err.textContent = errorText(ex);
+      err.hidden = false;
+    }
+  })();
+});
+
+function setBookmarks(data: BookmarkData | null): void {
+  bookmarkData = data;
+  renderFavorites();
+  renderLegacyFavorites();
+  renderBookmarksPage();
+}
+api.onBookmarks(setBookmarks);
+void api.invoke<BookmarkData | null>('ui:bookmarks').then(setBookmarks);
+
+// ---------------------------------------------------------------------------
 // Wiring
 // ---------------------------------------------------------------------------
 function render(): void {
@@ -462,6 +809,7 @@ function render(): void {
 }
 
 let prevUnlocked = false;
+let prevBookmarksAvailable = true;
 api.onState((s) => {
   const activeChanged = s.activeId !== state.activeId;
   state = s;
@@ -471,12 +819,20 @@ api.onState((s) => {
     if (!s.vaultUnlocked) fillChoices = null;
     if (vaultOpen) void refreshVault();
   }
+  if (prevBookmarksAvailable !== s.bookmarks.available) {
+    prevBookmarksAvailable = s.bookmarks.available;
+    renderFavorites();
+  }
   render();
+  if (bookmarksOpen) {
+    $<HTMLInputElement>('bm-touchid').checked = s.bookmarks.touchIDRequired;
+    $('bm-lock').hidden = !s.bookmarks.touchIDRequired;
+  }
 });
 
 api.onCommand((cmd) => {
   if (cmd === 'focus-address') {
-    closeVault();
+    closePages();
     if (state.legacy) {
       legacyAddress.focus();
       legacyAddress.select();
@@ -485,6 +841,8 @@ api.onCommand((cmd) => {
     }
   } else if (cmd === 'toggle-vault') {
     vaultOpen ? closeVault() : openVault();
+  } else if (cmd === 'toggle-bookmarks') {
+    bookmarksOpen ? closeBookmarks() : openBookmarks();
   }
 });
 

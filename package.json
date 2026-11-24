@@ -11,7 +11,9 @@
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.ui.json --noEmit",
     "dist": "npm run build && electron-builder",
     "icon": "npx electron scripts/render-icon.cjs",
-    "test:vault": "npm run build && electron scripts/vault-test.cjs"
+    "test:vault": "npm run build && electron scripts/vault-test.cjs",
+    "test:bookmarks": "npm run build && electron scripts/bookmarks-test.cjs",
+    "test": "npm run build && electron scripts/vault-test.cjs && electron scripts/bookmarks-test.cjs"
   },
   "build": {
     "appId": "org.webscape.wanderer",
