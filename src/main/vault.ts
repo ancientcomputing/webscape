@@ -23,20 +23,34 @@ const AUTO_LOCK_MS = 10 * 60 * 1000;
  *   unlocking requires Touch ID when the Mac has it. The vault locks itself after
  *   10 minutes without use.
  * - If OS-level encryption is unavailable the vault refuses to save rather than
- *   falling back to plaintext.
+ *   falling back to plaintext. That includes Linux without a keyring, where
+ *   Electron would otherwise use a built-in key ("basic_text").
+ * - Uses the async safeStorage API (the synchronous one is deprecated).
  */
 export class Vault {
   private entries: Entry[] | null = null;
   private lockTimer: NodeJS.Timeout | undefined;
   private unlocking: Promise<boolean> | null = null;
+  /** null until init() has asked the OS whether encryption is available. */
+  private availability: boolean | null = null;
+  /** Writes run one at a time, in order. */
+  private writing: Promise<void> = Promise.resolve();
 
   constructor(
     private readonly file: string,
     private readonly onChange: () => void,
   ) {}
 
+  /** Ask the OS whether real encryption is available. Call once after app ready. */
+  async init(): Promise<void> {
+    let ok = await safeStorage.isAsyncEncryptionAvailable();
+    if (ok && process.platform === 'linux' && safeStorage.getSelectedStorageBackend() === 'basic_text') ok = false;
+    this.availability = ok;
+    this.onChange();
+  }
+
   get available(): boolean {
-    return safeStorage.isEncryptionAvailable();
+    return this.availability === true;
   }
 
   get unlocked(): boolean {
@@ -63,7 +77,10 @@ export class Vault {
         return false;
       }
     }
-    this.entries = this.read();
+    const { entries, reEncrypt } = await this.read();
+    this.entries = entries;
+    // The OS rotated or upgraded the key: store the vault under the new one.
+    if (reEncrypt) await this.write();
     this.touch();
     this.onChange();
     return true;
@@ -80,19 +97,28 @@ export class Vault {
     this.lockTimer = setTimeout(() => this.lock(), AUTO_LOCK_MS);
   }
 
-  private read(): Entry[] {
-    if (!fs.existsSync(this.file)) return [];
-    const plain = safeStorage.decryptString(fs.readFileSync(this.file));
-    const data = JSON.parse(plain) as { version: number; entries: Entry[] };
-    return data.entries;
+  private async read(): Promise<{ entries: Entry[]; reEncrypt: boolean }> {
+    if (!fs.existsSync(this.file)) return { entries: [], reEncrypt: false };
+    const blob = await fs.promises.readFile(this.file);
+    const { result, shouldReEncrypt } = await safeStorage.decryptStringAsync(blob);
+    const data = JSON.parse(result) as { version: number; entries: Entry[] };
+    return { entries: data.entries, reEncrypt: shouldReEncrypt };
   }
 
-  private write(): void {
-    if (!this.entries) throw new Error('Vault is locked');
-    const blob = safeStorage.encryptString(JSON.stringify({ version: 1, entries: this.entries }));
-    const tmp = `${this.file}.tmp`;
-    fs.writeFileSync(tmp, blob, { mode: 0o600 });
-    fs.renameSync(tmp, this.file);
+  /** Encrypt and save the current entries. Atomic (temp file + rename) and serialised. */
+  private write(): Promise<void> {
+    if (!this.entries) return Promise.reject(new Error('Vault is locked'));
+    const snapshot = JSON.stringify({ version: 1, entries: this.entries });
+    const run = async () => {
+      const blob = await safeStorage.encryptStringAsync(snapshot);
+      const tmp = `${this.file}.tmp`;
+      await fs.promises.writeFile(tmp, blob, { mode: 0o600 });
+      await fs.promises.rename(tmp, this.file);
+    };
+    // Keep the queue alive after a failure, but still report it to this caller.
+    const next = this.writing.then(run, run);
+    this.writing = next.catch(() => {});
+    return next;
   }
 
   private requireUnlocked(): Entry[] {
@@ -123,7 +149,7 @@ export class Vault {
     return hit.password === password ? 'same' : 'update';
   }
 
-  upsert(origin: string, username: string, password: string): void {
+  upsert(origin: string, username: string, password: string): Promise<void> {
     const entries = this.requireUnlocked();
     const now = Date.now();
     const hit = entries.find((e) => e.origin === origin && e.username === username);
@@ -133,13 +159,13 @@ export class Vault {
     } else {
       entries.push({ id: crypto.randomUUID(), origin, username, password, created: now, updated: now });
     }
-    this.write();
+    return this.write();
   }
 
-  remove(id: string): void {
+  remove(id: string): Promise<void> {
     const entries = this.requireUnlocked();
     this.entries = entries.filter((e) => e.id !== id);
-    this.write();
+    return this.write();
   }
 }
 

@@ -10,7 +10,8 @@
     "start": "node scripts/dev-app-name.mjs && npm run build && electron .",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.ui.json --noEmit",
     "dist": "npm run build && electron-builder",
-    "icon": "npx electron scripts/render-icon.cjs"
+    "icon": "npx electron scripts/render-icon.cjs",
+    "test:vault": "npm run build && electron scripts/vault-test.cjs"
   },
   "build": {
     "appId": "org.webscape.wanderer",

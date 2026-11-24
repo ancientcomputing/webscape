@@ -38,3 +38,9 @@ jobs:
         run: npx electron .
         env:
           WEBSCAPE_SMOKE_TEST: "1"
+
+      # Encrypts, saves, locks, unlocks and decrypts a throwaway vault through
+      # the real macOS Keychain, and opens a vault written by older versions.
+      - name: Password vault test
+        timeout-minutes: 3
+        run: npx electron scripts/vault-test.cjs

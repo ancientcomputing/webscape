@@ -412,15 +412,15 @@ function registerUIHandlers(): void {
     const entry = vault!.get(id);
     if (entry) copySecret(entry.password);
   });
-  handle('ui:vaultDelete', (id: string) => {
-    vault!.remove(id);
+  handle('ui:vaultDelete', async (id: string) => {
+    await vault!.remove(id);
     pushState();
   });
-  handle('ui:vaultAdd', (url: string, username: string, password: string) => {
+  handle('ui:vaultAdd', async (url: string, username: string, password: string) => {
     const origin = fillableOrigin(/^[a-z]+:/i.test(url) ? url : `https://${url}`);
     if (!origin) throw new Error('Passwords can only be saved for https sites.');
     if (!password) throw new Error('Password is empty.');
-    vault!.upsert(origin, username, password);
+    await vault!.upsert(origin, username, password);
     pushState();
   });
   handle('ui:copySecret', (text: string) => copySecret(text));
@@ -454,7 +454,7 @@ function registerUIHandlers(): void {
       pushState();
       return false;
     }
-    vault!.upsert(p.origin, p.username, p.password);
+    await vault!.upsert(p.origin, p.username, p.password);
     pushState();
     return true;
   });
@@ -599,6 +599,7 @@ if (!SMOKE_TEST && !app.requestSingleInstanceLock()) {
     // Packaged builds get their icon from the bundle; dev runs borrow Electron's otherwise.
     if (process.platform === 'darwin' && !app.isPackaged && fs.existsSync(ICON)) app.dock?.setIcon(ICON);
     vault = new Vault(path.join(app.getPath('userData'), 'vault.bin'), pushState);
+    void vault.init();
     void initBlocker(app.getPath('userData'));
     registerUIHandlers();
     registerPageHandlers();

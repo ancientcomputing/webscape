@@ -155,15 +155,18 @@ The folder is `~/Library/Application Support/Webscape Wanderer` on macOS, `%APPD
 The browser engine is the `electron` package, which bundles Chromium. Electron releases a new major version about every 8 weeks and supports only the newest three, so an app that isn't updated stops getting security fixes within about six months.
 
 - **Dependabot** ([.github/dependabot.yml](.github/dependabot.yml)) checks npm daily. Electron updates get their own pull request.
-- **CI** ([.github/workflows/ci.yml](.github/workflows/ci.yml)) type-checks, builds and **smoke-tests** every pull request on macOS. The smoke test launches the real browser and checks that the UI loads, that each tab gets its own in-memory session, and that the user agent doesn't reveal Electron.
+- **CI** ([.github/workflows/ci.yml](.github/workflows/ci.yml)) type-checks, builds, **smoke-tests** and **vault-tests** every pull request on macOS. The smoke test launches the real browser and checks that the UI loads, that each tab gets its own in-memory session, and that the user agent doesn't reveal Electron.
 - **Patch and minor updates** are mostly security fixes. Merge them as soon as CI is green.
 - **Major updates** can change Electron's APIs. Merge them after CI passes and a quick manual check with `npm start`.
 
-Run the smoke test locally with:
+Run the checks locally with:
 
 ```bash
-npm run build && WEBSCAPE_SMOKE_TEST=1 npx electron .
+npm run build && WEBSCAPE_SMOKE_TEST=1 npx electron .   # smoke test
+npm run test:vault                                     # password vault, via the real keychain
 ```
+
+The vault test uses its own keychain entry and a temporary folder, so it never touches your saved passwords.
 
 ## Contributing
 
