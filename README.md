@@ -221,7 +221,7 @@ The vault and bookmarks tests use their own keychain entries and a temporary fol
 
 ## Contributing
 
-Issues and pull requests are welcome. Please keep the core promise intact: **no browsing data on disk, no extensions, and no network requests that aren't made by the page you're viewing.** Report security problems privately (see [SECURITY.md](SECURITY.md)), not in public issues.
+Issues and pull requests are welcome. Please keep the core promise intact: **no browsing data on disk, no extensions, and no network requests that aren't made by the page you're viewing.** Report security problems privately (see [SECURITY.md](SECURITY.md)), not in public issues. Planned features are listed in [ROADMAP.md](ROADMAP.md).
 
 ## License
 
