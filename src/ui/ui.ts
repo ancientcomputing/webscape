@@ -883,9 +883,13 @@ function resultItem(r: ResultInsight, rank: number): HTMLElement {
   const body = h('div', { class: 'ins-body' },
     h('div', { class: 'ins-host', text: r.status === 'done' ? `${rank}. ${r.host}` : r.host }), open);
   if (r.status === 'done') {
-    const verdict = r.answers === 'yes' ? 'Answers it' : r.answers === 'partly' ? 'Partly answers it' : 'Doesn’t answer it';
-    const why = (r.factors ?? []).join(' · ');
-    body.append(h('div', { class: `ins-verdict ${r.answers ?? 'no'}` },
+    const verdict = r.listicle
+      ? 'Listicle · scored 0'
+      : r.answers === 'yes' ? 'Answers it' : r.answers === 'partly' ? 'Partly answers it' : 'Doesn’t answer it';
+    const reasons = r.listicle ? [] : [...(r.factors ?? [])];
+    if (r.rendered) reasons.push('read with JavaScript');
+    const why = reasons.join(' · ');
+    body.append(h('div', { class: `ins-verdict ${r.listicle ? 'listicle' : r.answers ?? 'no'}`, title: r.listicle ? 'Listicles (“Top 10…”, “15 best…”) are scored 0.' : '' },
       h('span', { text: verdict }),
       why ? h('span', { class: 'ins-factors', text: ` · ${why}` }) : null));
     if (r.summary) body.append(h('p', { class: 'ins-summary', text: r.summary }));

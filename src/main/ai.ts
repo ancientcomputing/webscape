@@ -25,6 +25,8 @@ export interface Verdict {
   evidence: string;
   /** Short reasons for the score, e.g. ["direct", "detailed", "focused"]. */
   factors: string[];
+  /** A listicle: scored 0. */
+  listicle: boolean;
 }
 
 type Reply = { id: string; ok: boolean; error?: string } & Record<string, unknown>;
@@ -117,6 +119,7 @@ export class AIHelper {
       summary: String(r.summary ?? ''),
       evidence: String(r.evidence ?? ''),
       factors: Array.isArray(r.factors) ? r.factors.map(String).slice(0, 4) : [],
+      listicle: r.listicle === true,
     };
   }
 

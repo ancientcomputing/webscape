@@ -1,8 +1,7 @@
-import { session, WebContents, WebContentsView } from 'electron';
-import crypto from 'node:crypto';
-import path from 'node:path';
+import { WebContents } from 'electron';
 import type { InsightsState, ResultInsight, SearchView } from '../shared/types';
 import { AIHelper } from './ai';
+import { MIN_TEXT, PageReader } from './page-reader';
 
 /**
  * "Analyze results": for a search results page, read the top results and ask the
@@ -12,16 +11,14 @@ import { AIHelper } from './ai';
  * - Only runs when you click Analyze.
  * - The result list is read from the DuckDuckGo page you already loaded. We don't
  *   ask DuckDuckGo for anything again.
- * - Each result page is fetched once, as plain HTML (no JavaScript, images or
- *   other resources), in a throwaway in-memory session with no cookies. That
- *   session is wiped as soon as the page is read.
+ * - Each result page is read by PageReader: plain HTML first; a locked-down
+ *   JavaScript render only for pages that show no text without it. Throwaway
+ *   in-memory sessions, wiped as soon as the page is read.
  * - The model runs on this Mac. Results live only in the tab's memory.
  */
 
 const MAX_RESULTS = 8;
 const READ_CONCURRENCY = 3;
-const FETCH_TIMEOUT_MS = 12_000;
-const MAX_HTML_BYTES = 3_000_000;
 
 /** The search query if this is a DuckDuckGo results page. */
 export function searchQuery(url: string): string | null {
@@ -65,8 +62,7 @@ interface Analysis extends InsightsState {
 
 export class Insights {
   private byTab = new Map<number, Analysis>();
-  private reader: WebContentsView | null = null;
-  private readerReady: Promise<void> | null = null;
+  private reader = new PageReader();
 
   constructor(
     private readonly ai: AIHelper,
@@ -177,10 +173,11 @@ export class Insights {
         this.changed();
         let text = '';
         try {
-          const page = await this.read(result.url);
+          const page = await this.reader.read(result.url);
           if (page.title && !result.title) result.title = page.title;
+          result.rendered = page.rendered;
           text = [page.description, page.text].filter(Boolean).join('\n\n');
-          if (text.length < 200) throw new Error('This page needs JavaScript to show its content, so it couldn’t be read.');
+          if (text.length < MIN_TEXT) throw new Error('This page shows almost no text, even with JavaScript, so it couldn’t be read.');
         } catch (err) {
           result.status = 'error';
           result.error = (err as Error).message;
@@ -212,61 +209,9 @@ export class Insights {
     this.changed();
   }
 
-  /** Fetch one page as plain HTML in a throwaway, cookie-less, in-memory session, and extract its text. */
-  private async read(url: string): Promise<{ title: string; description: string; text: string }> {
-    const ses = session.fromPartition(`reader-${crypto.randomUUID()}`); // no "persist:" → memory only
-    try {
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
-      let html: string;
-      try {
-        const res = await ses.fetch(url, {
-          signal: controller.signal,
-          redirect: 'follow',
-          credentials: 'omit',
-          headers: { Accept: 'text/html,application/xhtml+xml;q=0.9,text/plain;q=0.8', 'Sec-GPC': '1', DNT: '1' },
-        });
-        if (!res.ok) throw new Error(`The site answered with an error (${res.status}).`);
-        const type = res.headers.get('content-type') ?? '';
-        if (!/text\/html|application\/xhtml|text\/plain/.test(type)) throw new Error('Not a web page.');
-        const declared = Number(res.headers.get('content-length') ?? 0);
-        if (declared > MAX_HTML_BYTES) throw new Error('The page is too large to read.');
-        const buf = await res.arrayBuffer();
-        html = new TextDecoder().decode(buf.byteLength > MAX_HTML_BYTES ? buf.slice(0, MAX_HTML_BYTES) : buf);
-        if (/text\/plain/.test(type)) return { title: '', description: '', text: html.slice(0, 20_000) };
-      } catch (err) {
-        if ((err as Error).name === 'AbortError') throw new Error('The site took too long to respond.');
-        throw err;
-      } finally {
-        clearTimeout(timer);
-      }
-      const reader = await this.readerView();
-      return await reader.webContents.executeJavaScript(`extract(${JSON.stringify(html)})`);
-    } finally {
-      ses.clearStorageData().catch(() => {});
-      ses.clearCache().catch(() => {});
-    }
-  }
-
-  /** The hidden page that turns HTML into text (src/ui/reader.ts). Never shown; loads nothing from the web. */
-  private readerView(): Promise<WebContentsView> {
-    if (!this.reader || this.reader.webContents.isDestroyed()) {
-      const view = new WebContentsView({
-        webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false, spellcheck: false, backgroundThrottling: false },
-      });
-      view.webContents.on('will-navigate', (e) => e.preventDefault());
-      view.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
-      this.reader = view;
-      this.readerReady = view.webContents.loadFile(path.join(__dirname, '../ui/reader.html'));
-    }
-    const view = this.reader;
-    return this.readerReady!.then(() => view);
-  }
-
   dispose(): void {
     for (const tabId of [...this.byTab.keys()]) this.cancel(tabId);
-    if (this.reader && !this.reader.webContents.isDestroyed()) this.reader.webContents.close();
-    this.reader = null;
+    this.reader.dispose();
   }
 }
 

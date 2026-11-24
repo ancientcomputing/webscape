@@ -53,14 +53,17 @@ How it stays private:
 
 - **No extra request to DuckDuckGo:** the result list is read from the page you already loaded.
 - **Private reading:** each result page is fetched once as plain HTML (no JavaScript, images or trackers) in a throwaway, cookie-less, in-memory session that's wiped right after.
+- **Pages built with JavaScript:** if a page shows almost no text as plain HTML, it gets a second pass: rendered in a hidden, locked-down throwaway tab (tracker blocker on; images, media, fonts, pop-ups, permissions and downloads refused; sound muted), then read the same way. At most two at a time. These results say "read with JavaScript".
 - **On this Mac:** the model is Apple's on-device model, run through the [LocalLM Lab SDK](https://github.com/ancientcomputing/locallm) by a small helper inside the app (`native/webscape-ai`). It talks to the browser over a pipe; nothing listens on a network port and nothing is sent to a cloud service.
 - **Memory only:** answers live in the tab, like everything else, and disappear when you search again or close the tab.
 
+**Listicles score 0.** "Top 10…", "15 best…" and similar pages go to the bottom, labelled "Listicle · scored 0". To avoid zeroing a good page, the title alone only counts when it's unmistakable (a small number before a superlative or list word, like "15 Best" or "10 Highest"). Otherwise the page needs numbered section headings *and* the model's judgement that it's a listicle, so a numbered step-by-step recipe isn't caught.
+
 How a score is made: asked directly for a number, a small on-device model gives nearly every relevant page about 92. So instead it answers a short rubric of plain judgements (does the page answer it; how directly; how completely; how focused the page is), and the score is computed from that in code, together with two measurements of the page itself (how early the answer appears, and how much of the page covers the question). A quote that isn't actually in the page costs points and isn't shown. Each result lists its reasons, for example "Answers it · direct · detailed · focused".
 
-`npm run eval:ranking` scores a hand-graded set of pages ([native/webscape-ai/eval](native/webscape-ai/eval)) and reports how well scores spread and order them. On it, the pages that answer the question went from a spread of 1.9 points and 56% correct order to a spread of 6.6 points and 89% correct order (96% across all pages).
+`npm run eval:ranking` scores a hand-graded set of pages ([native/webscape-ai/eval](native/webscape-ai/eval)) and reports how well scores spread and order them. On it, the pages that answer the question went from a spread of 1.9 points and 56% correct order to a spread of 6.5 points and 86% correct order (95% across all pages), and listicle detection catches 4 of 4 with no false alarms, including a numbered recipe it must not flag. `npm run test:reader` checks the page reader against a local server, including that the JavaScript pass loads no images or pop-ups.
 
-Needs a Mac with Apple Intelligence turned on (macOS 26 or later). Scores are the model's estimate, not a guarantee. Pages that only build their content with JavaScript can't be read yet.
+Needs a Mac with Apple Intelligence turned on (macOS 26 or later). Scores are the model's estimate, not a guarantee.
 
 ### Light and dark
 
@@ -161,7 +164,8 @@ src/
     tabs.ts        TabManager: one WebContentsView + one in-memory partition per tab
     privacy.ts     per-session hardening: blocker, headers, permissions, preload
     vault.ts       encrypted password vault (safeStorage + Touch ID)
-    insights.ts    "Analyze results": reads search results privately, asks the AI helper to judge them
+    insights.ts    Answers: reads search results privately, asks the AI helper to judge them
+    page-reader.ts plain-HTML reading, plus the locked-down JavaScript pass
     ai.ts          starts and talks to the AI helper (JSON lines over stdin/stdout)
   preload/
     ui-preload.ts  narrow, allow-listed bridge for the sidebar

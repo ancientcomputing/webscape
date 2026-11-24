@@ -107,6 +107,47 @@ enum Verdict {
     }
 }
 
+/// Asked only when a page has numbered headings and no conclusive title, as a
+/// follow-up in the same session. (Adding it to `PageVerdict` shifted the other
+/// judgements and cost ranking accuracy in the eval.)
+@Generable
+struct FormatCheck {
+    @Guide(description: "What kind of page this is.",
+           .anyOf(["a listicle: a numbered list of separate items, like 'Top 10' or '15 best'",
+                   "step-by-step instructions", "an article or guide", "a reference page", "something else"]))
+    var format: String
+}
+
+/// Listicles ("Top 10…", "15 best…") score 0. Wrongly zeroing a good page is the
+/// worse mistake, so the title alone counts only when unmistakable; otherwise
+/// numbered section headings *and* the model's judgement must agree.
+enum Listicle {
+    /// "15 Best …", "10 Highest …", "Top 10 …", "7 Ways …": a small number before a superlative or list word.
+    static let titlePattern = try! NSRegularExpression(
+        pattern: #"\btop\s*\d{1,3}\b|\b(?!(?:19|20)\d\d\b)\d{1,3}\+?\s+(?:of\s+the\s+)?(?:\w+est|best|top|ways|things|tips|tricks|reasons|facts|ideas|places|products|tools|apps|mistakes|signs|hacks|secrets|foods|recipes|questions|examples|types|picks|options|alternatives|habits|benefits|must|amazing|essential|incredible|surprising|fun)\b"#,
+        options: [.caseInsensitive]
+    )
+    static let numberInTitle = try! NSRegularExpression(pattern: #"\b(?!(?:19|20)\d\d\b)\d{1,3}\b"#)
+    static let numberedHeading = try! NSRegularExpression(
+        pattern: #"^#{1,6}\s*\d{1,3}\s*[.):-]?\s+\S"#, options: [.anchorsMatchLines]
+    )
+
+    static func matches(_ re: NSRegularExpression, _ s: String) -> Int {
+        re.numberOfMatches(in: s, range: NSRange(s.startIndex..., in: s))
+    }
+
+    enum Evidence { case listicle, notListicle, askModel }
+
+    /// What the page itself says. `askModel`: numbered headings suggest a listicle,
+    /// but only the model's judgement can tell it from step-by-step instructions.
+    static func check(title: String, text: String) -> Evidence {
+        if matches(titlePattern, title) > 0 { return .listicle }
+        let headings = matches(numberedHeading, text)
+        let titleNumber = matches(numberInTitle, title) > 0
+        return headings >= 5 || (headings >= 3 && titleNumber) ? .askModel : .notListicle
+    }
+}
+
 /// Measurements taken from the page text itself (no model), for the parts of a
 /// judgement a small model makes loosely.
 struct PageSignals {
@@ -264,6 +305,24 @@ final class Helper {
                 let found = Verdict.quoteIsInPage(v.evidence, page: page)
                 let signals = PageSignals.measure(query: query, text: page, evidence: v.evidence, evidenceFound: found)
                 let factors = [v.directness, v.completeness, v.focus].compactMap { Verdict.labels[$0] }
+                var listicle = false
+                switch Listicle.check(title: req.title ?? "", text: page) {
+                case .listicle: listicle = true
+                case .notListicle: break
+                case .askModel:
+                    let format = try? await session.respond(
+                        to: "What kind of page is this?", generating: FormatCheck.self,
+                        options: GenerationOptions(temperature: 0)
+                    )
+                    listicle = format?.content.format.hasPrefix("a listicle") ?? false
+                }
+                if listicle {
+                    return [
+                        "id": req.id, "ok": true, "score": 0, "listicle": true,
+                        "answers": v.answers, "summary": v.summary,
+                        "evidence": found ? v.evidence : "", "factors": ["listicle"],
+                    ]
+                }
                 return [
                     "id": req.id, "ok": true,
                     "score": Verdict.score(v, signals: signals, evidenceFound: found),

@@ -117,3 +117,30 @@ export function setupSession(ses: Session, getWindow: () => BaseWindow | null, o
   // Login-form detection and password autofill, running in an isolated world.
   ses.registerPreloadScript({ type: 'frame', id: 'webscape-page', filePath: PAGE_PRELOAD });
 }
+
+/**
+ * Lock down a throwaway session used to render a page nobody sees (the
+ * JavaScript reading pass for Answers). Stricter than a tab: every permission is
+ * refused without asking, downloads are cancelled, trackers are blocked, and
+ * nothing is loaded except the page's own scripts, styles and data (images,
+ * media and fonts are refused).
+ */
+export function hardenReaderSession(ses: Session): void {
+  ses.setSpellCheckerEnabled(false);
+  ses.setPermissionCheckHandler(() => false);
+  ses.setPermissionRequestHandler((_wc, _permission, callback) => callback(false));
+  ses.on('will-download', (event) => event.preventDefault());
+  const SKIP = new Set(['image', 'media', 'font', 'object', 'ping', 'cspReport']);
+  ses.webRequest.onBeforeRequest({ urls: ['<all_urls>'] }, (details, callback) => {
+    if (!/^https?:/i.test(details.url) && !details.url.startsWith('data:')) return callback({ cancel: true });
+    if (SKIP.has(details.resourceType)) return callback({ cancel: true });
+    if (!blocker) return callback({});
+    blocker.onBeforeRequest(details, callback);
+  });
+  ses.webRequest.onBeforeSendHeaders((details, callback) => {
+    const headers = details.requestHeaders;
+    headers['Sec-GPC'] = '1';
+    headers['DNT'] = '1';
+    callback({ requestHeaders: headers });
+  });
+}

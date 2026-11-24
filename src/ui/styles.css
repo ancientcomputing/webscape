@@ -428,6 +428,8 @@ body.light #theme-toggle .i-sun { display: none; }
 .ins-verdict.partly { color: var(--warn); }
 .ins-verdict.no { color: var(--faint); }
 .ins-factors { color: var(--faint); font-weight: 500; }
+.ins-verdict.listicle { color: var(--danger); }
+.ins-item:has(.ins-verdict.listicle) { opacity: .7; }
 .ins-summary, .ins-error, .ins-pending { margin: 6px 0 0; font-size: 14px; line-height: 1.55; color: var(--tab-text); }
 .ins-error, .ins-pending { color: var(--faint); font-size: 13px; }
 .ins-evidence {

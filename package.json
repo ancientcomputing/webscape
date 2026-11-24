@@ -15,7 +15,8 @@
     "test:bookmarks": "npm run build && electron scripts/bookmarks-test.cjs",
     "test": "npm run build && electron scripts/vault-test.cjs && electron scripts/bookmarks-test.cjs",
     "build:ai": "node scripts/build-ai.mjs",
-    "eval:ranking": "npm run build:ai && node scripts/eval-ranking.mjs"
+    "eval:ranking": "npm run build:ai && node scripts/eval-ranking.mjs",
+    "test:reader": "npm run build && electron scripts/reader-test.cjs"
   },
   "build": {
     "appId": "org.webscape.wanderer",

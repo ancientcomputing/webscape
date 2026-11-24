@@ -63,3 +63,8 @@ jobs:
       - name: Bookmarks test
         timeout-minutes: 3
         run: npx electron scripts/bookmarks-test.cjs
+
+      # Plain-HTML reading, the JavaScript pass, and that the pass loads no images or pop-ups.
+      - name: Page reader test
+        timeout-minutes: 3
+        run: npx electron scripts/reader-test.cjs

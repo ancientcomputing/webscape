@@ -62,6 +62,10 @@ export interface ResultInsight {
   evidence?: string;
   /** Short reasons for the score, e.g. ["direct", "detailed", "focused"]. */
   factors?: string[];
+  /** The page only showed its text with JavaScript (read by the JavaScript pass). */
+  rendered?: boolean;
+  /** A listicle ("Top 10…", "15 best…"): scored 0. */
+  listicle?: boolean;
   error?: string;
 }
 

@@ -8,6 +8,7 @@
 //   - order:    of all page pairs with different grades, the share scored in the
 //               right order (ties count as half)
 //   - spearman: rank correlation between grade and score
+// Pages marked "listicle" must be flagged and scored 0; every other page must not be.
 // Needs Apple Intelligence (it runs the real model).
 import { spawn } from 'node:child_process';
 import { readFileSync } from 'node:fs';
@@ -60,6 +61,7 @@ const pearson = (a, b) => {
 };
 
 const totals = { sd: [], order: [], spearman: [], distinct: [], topSd: [], topOrder: [] };
+const listicles = { caught: 0, missed: 0, falseAlarms: 0 };
 
 /** Share of pairs (with different grades) scored in the right order; ties count half. */
 function orderAccuracy(rows) {
@@ -79,9 +81,12 @@ for (const c of cases) {
   const rows = [];
   for (const p of c.pages) {
     const r = await ask({ op: 'rank', query: c.query, title: p.title, url: p.url, text: p.text });
-    rows.push({ grade: p.grade, score: r.ok ? r.score : NaN, answers: r.answers ?? r.error, title: p.title, extra: r.factors, summary: r.summary, evidence: r.evidence });
+    rows.push({ grade: p.grade, expectListicle: p.listicle === true, flagged: r.listicle === true, score: r.ok ? r.score : NaN, answers: r.answers ?? r.error, title: p.title, extra: r.factors, summary: r.summary, evidence: r.evidence });
+    const last = rows[rows.length - 1];
+    if (last.expectListicle) last.flagged && last.score === 0 ? listicles.caught++ : listicles.missed++;
+    else if (last.flagged) listicles.falseAlarms++;
   }
-  const scored = rows.filter((r) => !Number.isNaN(r.score));
+  const scored = rows.filter((r) => !Number.isNaN(r.score) && !r.expectListicle);
   const scores = scored.map((r) => r.score);
   // The pages that do answer (grades 3–5): the tier real searches are mostly made of.
   const top = scored.filter((r) => r.grade >= 3);
@@ -96,12 +101,13 @@ for (const c of cases) {
   for (const k of Object.keys(totals)) totals[k].push(m[k]);
   console.log(`\n“${c.query}”`);
   for (const r of rows)
-    console.log(`  grade ${r.grade}  score ${String(r.score).padStart(3)}  ${String(r.answers).padEnd(7)} ${r.title.slice(0, 50)}${r.extra ? '  ' + JSON.stringify(r.extra) : ''}`);
+    console.log(`  ${r.expectListicle ? 'LIST.  ' : `grade ${r.grade}`}  score ${String(r.score).padStart(3)}  ${String(r.answers).padEnd(7)} ${r.title.slice(0, 50)}${r.extra ? '  ' + JSON.stringify(r.extra) : ''}`);
   console.log(`  spread sd ${m.sd.toFixed(1)} · ${m.distinct} distinct · order ${(m.order * 100).toFixed(0)}% · spearman ${m.spearman.toFixed(2)} · answering pages: sd ${m.topSd.toFixed(1)}, order ${(m.topOrder * 100).toFixed(0)}%`);
 }
 console.log(
   `\nOVERALL  spread sd ${mean(totals.sd).toFixed(1)} · distinct ${mean(totals.distinct).toFixed(1)}/6 · ` +
     `order ${(mean(totals.order) * 100).toFixed(0)}% · spearman ${mean(totals.spearman).toFixed(2)}\n` +
+    `LISTICLES  caught ${listicles.caught} · missed ${listicles.missed} · false alarms ${listicles.falseAlarms}\n` +
     `ANSWERING PAGES (grades 3–5)  spread sd ${mean(totals.topSd).toFixed(1)} · order ${(mean(totals.topOrder) * 100).toFixed(0)}% · ${((Date.now() - started) / 1000).toFixed(0)} s`,
 );
 child.stdin.end();
