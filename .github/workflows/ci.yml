@@ -16,7 +16,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           # Match the Node/npm the project is developed with, so `npm ci` reads
           # the lockfile the same way. Bump this together with your local Node.
